@@ -18,12 +18,14 @@ Dataset:
 ----------------------
 We used the WMT'15 corpora as our training set for both pretraining the NMT model and training the Simultaneous NMT model.
 The original WMT'15 corpora can be downloaded from [here](http://www.statmt.org/wmt15/translation-task.html). 
-For the preprocessed corpora used in our experiments, we used the same dataset of dl4mt-c2c (https://github.com/nyu-dl/dl4mt-c2c). Both the source and target datasets are preprocessed using byte-pair encoding (http://arxiv.org/abs/1508.07909, https://github.com/rsennrich/subword-nmt).
-* [Standard version (for bilingual models, 3.5GB)](https://drive.google.com/open?id=0BxmEQ91VZAPQam5pc2ltQ1BBTTQ)
+For the preprocessed corpora used in our experiments, both the source and target datasets are preprocessed using byte-pair encoding (http://arxiv.org/abs/1508.07909, https://github.com/rsennrich/subword-nmt).
 
 Pretraining:
 ----------------------
-TBA.
+Before training the agent for simultaneous translation, the underlined translation model requires pretraining.
+In our experiments, we pretrained single-layer undirectional NMT for both RU-EN and DE-EN corpora for both directions.
 
-* We provide the pretrained RU-EN, CS-EN and DE-EN unidirectional models for both directions as follows:
-TBA.
+* We provided the preprocessed dataset and the pretrained models: (https://drive.google.com/drive/folders/0B0miOG3ks5c1SVljM1Q5SURibU0?usp=sharing)
+
+### Training an Agent
+TBA

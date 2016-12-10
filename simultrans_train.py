@@ -12,24 +12,13 @@ from policy import Controller as Policy
 from utils import Progbar, Monitor
 
 from simultrans_model import simultaneous_decoding
-from simultrans_model import _seqs2words, _bpe2words, _action2delay, PIPE, _padding
+from simultrans_model import _seqs2words, _bpe2words, PIPE, _padding
 
 import time
 
 numpy.random.seed(19920206)
 timer = time.time
 
-WORK  = '/misc/kcgscratch1/ChoGroup/thoma_exp/SimulTrans/'
-EXP   = WORK
-
-# check hidden folders
-def check_env():
-    import os
-    paths = ['.policy', '.pretrained', '.log', '.config', '.images', '.translate']
-    for p in paths:
-        p = WORK + p
-        if not os.path.exists(p):
-            os.mkdir
 # run training function:: >>>
 def run_simultrans(model,
                    options_file=None,
@@ -37,8 +26,17 @@ def run_simultrans(model,
                    policy=None,
                    id=None,
                    remote=False):
-    # check envoriments
-    check_env()
+
+    WORK = config['workspace']
+
+    # check hidden folders
+    paths = ['.policy', '.pretrained', '.log', '.config', '.images', '.translate']
+    for p in paths:
+        p = WORK + p
+        if not os.path.exists(p):
+            os.mkdir(p)
+
+
     if id is not None:
         fcon = WORK + '.config/{}.conf'.format(id)
         if os.path.exists(fcon):
@@ -48,8 +46,7 @@ def run_simultrans(model,
     # ============================================================================== #
     # load model model_options
     # ============================================================================== #
-    _model = model
-    model = WORK + '.pretrained/{}'.format(model)
+    _model = model.split('/')[-1]
 
     if options_file is not None:
         with open(options_file, 'rb') as f:
@@ -57,6 +54,12 @@ def run_simultrans(model,
     else:
         with open('%s.pkl' % model, 'rb') as f:
             options = pkl.load(f)
+
+    print 'merge configuration into options'
+    for w in config:
+        if (w in options) and (config[w] is not None):
+            options[w] = config[w]
+
 
     print 'load options...'
     for w, p in sorted(options.items(), key=lambda x: x[0]):
@@ -151,12 +154,6 @@ def run_simultrans(model,
 
         return ret
 
-        # if not train:
-        #     sample, score, actions, R, tracks, attentions = ret
-        #     return sample, score, actions, R, tracks
-        # else:
-        #     sample, score, actions, R, info, pipe_t = ret
-        #     return sample, score, actions, R, info, pipe_t
 
     # check the ID:
     policy['base'] = _model
@@ -460,67 +457,15 @@ def run_simultrans(model,
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--step', type=int, default=1)
-    parser.add_argument('-k', '--peek', type=int, default=1)
-    parser.add_argument('-i', '--sinit', type=int, default=1)
-    parser.add_argument('-n', '--sample', type=int, default=20)
-    parser.add_argument('-b', '--batchsize', type=int, default=10)
-    parser.add_argument('-c', action="store_true", default=False)
-    parser.add_argument('-o', type=str, default=None)
+    from config import rl_config
+    policy, config = rl_config()
 
-    parser.add_argument('--updater', type=str, default='REINFORCE')
-    parser.add_argument('--recurrent', default=False)
-    parser.add_argument('--layernorm', default=False)
-    parser.add_argument('--upper', default=False)
-    parser.add_argument('--target', type=float, default=0.5)
-    parser.add_argument('--gamma', type=float, default=10)
-    parser.add_argument('--prop', type=float, default=0.5)  # only useful for random policy
-    parser.add_argument('--Rtype', type=int, default=0)  # 0, 1, 2, 3
-    parser.add_argument('--forget', default=False)
-    parser.add_argument('--maxsrc', type=float, default=10)
-    parser.add_argument('--pre', default=False)
-    parser.add_argument('--coverage', default=False)
-    parser.add_argument('--finetune', type=str, default='nope')
-    parser.add_argument('--id', type=str, default=None)
-    # parser.add_argument('-m', '--model', type=str,
-    #                     default='model_wmt15_bpe2k_uni_en-de_rev.npz')
-    parser.add_argument('-m', '--model', type=str,
-                        default='model_wmt15_bpe2k_uni_en-de.npz')
-    parser.add_argument('--remote', default=False)
-    args = parser.parse_args()
-    print args  # print settings
-
-    policy = OrderedDict()
-    policy['prop'] = args.prop
-    policy['recurrent'] = args.recurrent
-    policy['layernorm'] = args.layernorm
-    policy['updater'] = args.updater
-    policy['act_mask'] = True
-
-    config = OrderedDict()
-    config['step'] = args.step
-    config['peek'] = args.peek
-    config['s0'] = args.sinit
-    config['sample'] = args.sample
-    config['batchsize'] = args.batchsize
-    config['target'] = args.target
-    config['gamma'] = args.gamma
-    config['Rtype'] = args.Rtype
-    config['forget'] = args.forget
-    config['maxsrc'] = args.maxsrc
-    config['pre'] = args.pre
-    config['coverage'] = args.coverage
-    config['upper'] = False
-
-    config['finetune'] = args.finetune
-
-    run_simultrans(args.model,
-                   options_file=args.o,
+    run_simultrans(config['model'],
+                   options_file=config['option'],
                    config=config,
                    policy=policy,
-                   id=args.id,
-                   remote=args.remote)
+                   id=None,
+                   remote=False)
 
 
 

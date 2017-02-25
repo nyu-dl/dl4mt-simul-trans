@@ -14,8 +14,6 @@ PI   = numpy.pi
 E    = numpy.e
 A    = 0.2
 B    = 1
-WORK  = '/misc/kcgscratch1/ChoGroup/thoma_exp/SimulTrans/'
-EXP   = WORK
 
 class Controller(object):
 
@@ -25,6 +23,8 @@ class Controller(object):
                  config,
                  n_in=None, n_out=None,
                  recurrent=False, id=None):
+
+        self.WORK      = config['workspace']
 
         self.trng      = trng
         self.options   = options
@@ -89,13 +89,13 @@ class Controller(object):
 
         if id is not None:
             print 'reload the saved model: {}'.format(id)
-            params   = load_params(EXP + '.policy/{}-{}.current.npz'.format(id, self.policy['base']), params)
-            params_b = load_params(EXP + '.policy/{}-{}.current.npz'.format(id, self.policy['base']), params_b)
+            params   = load_params(self.WORK + '.policy/{}-{}.current.npz'.format(id, self.policy['base']), params)
+            params_b = load_params(self.WORK + '.policy/{}-{}.current.npz'.format(id, self.policy['base']), params_b)
         else:
             id = datetime.datetime.fromtimestamp(time.time()).strftime('%y%m%d-%H%M%S')
             print 'start from a new model: {}'.format(id)
 
-            with open(WORK + '.config/conf.{}.txt'.format(id), 'w') as f:
+            with open(self.WORK + '.config/conf.{}.txt'.format(id), 'w') as f:
                 f.write('[config]\n')
 
                 for c in config:
@@ -111,25 +111,11 @@ class Controller(object):
             print 'save the config file'
 
         self.id = id
-        self.model = EXP + '.policy/{}-{}'.format(id, self.policy['base'])
+        self.model = self.WORK + '.policy/{}-{}'.format(id, self.policy['base'])
 
         # theano shared params
         tparams        = init_tparams(params)
         tparams_b      = init_tparams(params_b)
-
-        if ('bn' in policy) and policy['bn']:
-            # params for input-batch normalization
-            self.gamma = theano.shared(numpy.asarray(numpy.random.uniform(
-                low=-1.0 / numpy.sqrt(self.n_in),
-                high=1.0 / numpy.sqrt(self.n_in),
-                size=(self.n_in)), dtype=theano.config.floatX), name='policy_gamma', borrow=True)
-            self.beta = theano.shared(numpy.zeros(
-                (self.n_in), dtype=theano.config.floatX), name='policy_beta', borrow=True)
-
-            self.mean = theano.shared(numpy.zeros((self.n_in), dtype=theano.config.floatX), name='mean', borrow=True)
-            self.var = theano.shared(numpy.ones((self.n_in), dtype=theano.config.floatX), name='var', borrow=True)
-            tparams['gamma'] = self.gamma
-            tparams['beta']  = self.beta
 
         self.tparams   = tparams
         self.tparams_b = tparams_b

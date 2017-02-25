@@ -59,25 +59,26 @@ def rl_config():
 
 
     # training set (source, target); or leave it None, agent will use the same corpus saved in the model
-    config['datasets'] = ['/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.zh.c0.tok.clean.bpe20k.np',
-                          '/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.en.c0.tok.clean.bpe20k.np']
+    config['datasets'] = ['/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.en.c0.tok.clean.bpe20k.np',
+                          '/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.zh.c0.tok.clean.bpe20k.np']
 
     # validation set (source, target); or leave it None, agent will use the same corpus saved in the model
-    config['valid_datasets'] = ['/misc/kcgscratch1/ChoGroup/thoma_data/un16/devset.un16.en-zh.zh.c0.tok.bpe20k.np',
-                                '/misc/kcgscratch1/ChoGroup/thoma_data/un16/devset.un16.en-zh.en.c0.tok.bpe20k.np']
+    config['valid_datasets'] = ['/misc/kcgscratch1/ChoGroup/thoma_data/un16/devset.un16.en-zh.en.c0.tok.bpe20k.np',
+                                '/misc/kcgscratch1/ChoGroup/thoma_data/un16/devset.un16.en-zh.zh.c0.tok.bpe20k.np']
 
     # vocabulary (source, target); or leave it None, agent will use the same dictionary saved in the model
-    config['dictionaries']   = ['/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.zh.c0.tok.clean.bpe20k.vocab.pkl',
-                                '/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.en.c0.tok.clean.bpe20k.vocab.pkl']
+    config['dictionaries']   = ['/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.en.c0.tok.clean.bpe20k.vocab.pkl',
+                                '/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.zh.c0.tok.clean.bpe20k.vocab.pkl']
 
     # pretrained model
-    config['model']  = '.pretrained/model_un16_bpe2k_uni_zh-en.npz'
-    config['option'] = '.pretrained/model_un16_bpe2k_uni_zh-en.npz.pkl'
+    config['model']  = '.pretrained/model_un16_bpe2k_uni_en-zh.npz'
+    config['option'] = '.pretrained/model_un16_bpe2k_uni_en-zh.npz.pkl'
 
     # critical training parameters.
     config['sample']    = 10
     config['batchsize'] = 10
-    config['target']    = 0.5  # target delay if using AP as reward.
+    config['target_ap'] = 1.0   # 0.75  # target delay if using AP as reward.
+    config['target_cw'] = 8     # if cw > 0 use cw mode
 
     # under-construction
     config['forget']    = False
@@ -98,7 +99,7 @@ def rl_config():
     config['Rtype']    = 10
     config['maxsrc']   = 10
     config['pre']      = False
-    config['coverage'] = True
+    config['coverage'] = False
     config['upper']    = False
     config['finetune'] = 'nope'
 

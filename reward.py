@@ -118,13 +118,13 @@ def return_reward(**_k):
                 Y = [words[t]]
 
             bb = sentence_bleu(ref, Y, smoothing_function=chencherry.method5)
-            bleus.append(bb[0])
+
+            bleus.append(bb[1])   # try true BLEU
             truebleus.append(bb[1])
 
 
-
         # print 'Latency BLEU', lbn
-        bleus = [0] + bleus
+        bleus = [0] + bleus    # use TRUE BLEU
         bleus = numpy.array(bleus)
         temp  = bleus[1:] - bleus[:-1]
 
@@ -237,7 +237,8 @@ def return_reward(**_k):
         _sum = 0
         for it, a in enumerate(_k['act']):
             if a == 0:
-                _src += 1
+                if _src < _k['source_len']:
+                    _src += 1
             elif a == 1:
                 _trg += 1
                 _sum += _src
@@ -323,7 +324,23 @@ def return_reward(**_k):
 
         return d * beta
 
-    
+
+    def MaximumDelay2(_max=5, beta=0.1):
+        d    = numpy.zeros((_k['steps'],))
+        _cur = 0
+        for it, a in enumerate(_k['act']):
+            if a == 0:
+                _cur += 1
+                if _cur > _max:
+                    d[it] = -0.1 * (_cur - _max)
+                pass
+            elif a == 1:   # only for new commit
+                _cur = 0
+
+        return d * beta
+
+
+
     def MaximumSource(_max=7, beta=0.1):
         s = numpy.zeros((_k['steps'], ))
         _cur = 0
@@ -759,10 +776,11 @@ def return_reward(**_k):
 
         maxsrc   = _k['maxsrc']
         target   = _k['target']
+        cw       = _k['cw']
         beta     = 0.03 # 0.5
 
         q0 = BLEUwithForget(return_quality=True)
-        d0 = NormalizedDelay2()
+        d0 = NormalizedDelay()
 
         # global reward signal :::>>>
         # just bleu
@@ -775,21 +793,29 @@ def return_reward(**_k):
         # use maximum-delay + latency bleu (with final BLEU)
         q = q0
         q[-1] = 0
-        d = MaximumDelay(_max=2, beta=beta)
+        if cw > 0:
+            d = MaximumDelay2(_max=cw, beta=beta)
+        else:
+            d = 0
+
         # s = AwardForget(_max=maxsrc, beta=0.01)
         # s = AwardForgetBi(_max=maxsrc, beta=0.01)
 
-        r0  = q + d
-        tar = -numpy.maximum(delay - target, 0)
-        rg  = bleu + 0.62 * tar # it is a global reward, will not be discounted.
-        
+        r0  = q + 0.5 * d
+
+        if target < 1:
+            tar = -numpy.maximum(delay - target, 0)
+        else:
+            tar = 0
+
+        rg  = bleu + tar # it is a global reward, will not be discounted.
         r      = r0
         r[-1] += rg
+
         R = r[::-1].cumsum()[::-1]
         return R, bleu, delay, R[0]
 
 
-    gamma = _k['gamma']
     type  = _k['Rtype']
 
     funcs = [ReturnA, ReturnB, ReturnC, ReturnD, ReturnE, ReturnF, ReturnG, ReturnH, ReturnI, ReturnJ, NewReward]

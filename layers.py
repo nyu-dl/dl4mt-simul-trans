@@ -15,6 +15,22 @@ numpy.random.seed(1000111)
 
 # -------------------------------------------------------------------------#
 # Basic utils:
+
+class flushfile(object):
+    def __getattr__(self,name):
+        return object.__getattribute__(self.f, name)
+    def __init__(self, f):
+        self.f = f
+
+    def write(self, x):
+        self.f.write(x)
+        self.f.flush()
+
+import sys
+sys.stdout = flushfile(sys.stdout)
+
+
+
 # push parameters to Theano shared variables
 def zipp(params, tparams):
     for kk, vv in params.iteritems():

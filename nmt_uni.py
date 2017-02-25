@@ -183,14 +183,14 @@ def build_model(tparams, options):
     return trng, use_noise, x, x_mask, y, y_mask, opt_ret, cost, f_cost
 
 
-# build a fine-tuner
-def build_fine(tparams, options, fullmodel=True):
+# build a simultaneous model
+def build_simultaneous_model(tparams, options, fullmodel=True, rl=True):
 
     # ------------------- ENCODER ------------------------------------------ #
 
     opt_ret   = dict()
 
-    trng      = RandomStreams(1234)
+    # trng      = RandomStreams(1234)
     use_noise = theano.shared(numpy.float32(0.))
 
     # description string: #words x #samples
@@ -239,8 +239,9 @@ def build_fine(tparams, options, fullmodel=True):
     print 'compile the initializer'
     f_init      = theano.function([x, x_mask], [ctx, init_state])
     print 'encoder done.'
-    # ------------------- ENCODER ------------------------------------------ #
 
+
+    # ------------------- DECODER ------------------------------------------ #
 
     c_mask      = tensor.tensor3('c_mask', dtype='float32') # seq_t x seq_s x batches
 
@@ -297,7 +298,13 @@ def build_fine(tparams, options, fullmodel=True):
 
     cost       = -tensor.log(probs.flatten()[y_flat_idx] + TINY)
     cost       = cost.reshape([y.shape[0], y.shape[1]])
-    a_cost     = tensor.mean((cost * y_mask).sum(0))
+
+
+    if rl:
+        advantages = tensor.matrix('advantages')
+        a_cost = tensor.mean((y_mask * cost * advantages).sum(0))
+    else:
+        a_cost = tensor.mean((cost * y_mask).sum(0))
 
     # gradient clipping
     def _clip(grad):
@@ -314,24 +321,19 @@ def build_fine(tparams, options, fullmodel=True):
 
 
     lr    = tensor.scalar(name='lr')
-    if fullmodel:
+    if not rl:
         print 'build MLE optimizer for the whole NMT model:'
         a_grad = _clip(theano.grad(a_cost, wrt=itemlist(tparams)))
         inps   = [x, x_mask, y, y_mask, c_mask]
         outps  = [a_cost, cost]
         f_cost, f_update = adam(lr, tparams, a_grad, inps, outps)
-    else:
-        print 'build MLE only for decoder'
-        tparams_d = OrderedDict()
-        for w in tparams:
-            if ('ff_state' not in w) and ('encoder' not in w) and (w != 'Wemb'):
-                print w, 'updated.'
-                tparams_d[w] = tparams[w]
 
-        a_grad = _clip(theano.grad(a_cost, wrt=itemlist(tparams_d)))
-        inps   = [x, x_mask, y, y_mask, c_mask]
+    else:
+        print 'build REINFORCE optimizer for the whole NMT model:'
+        a_grad = _clip(theano.grad(a_cost, wrt=itemlist(tparams)))
+        inps   = [x, x_mask, y, y_mask, c_mask, advantages]
         outps  = [a_cost, cost]
-        f_cost, f_update = adam(lr, tparams_d, a_grad, inps, outps)
+        f_cost, f_update = adam(lr, tparams, a_grad, inps, outps)
 
     print 'done.'
     return f_init, f_cost, f_update
@@ -462,7 +464,8 @@ def build_partial(tparams, options, trng):
 
     return f_partial
 
-
+# ----------------------------------------------------------------------- #
+# Simultaneous NMT
 def build_simultaneous_sampler(tparams, options, trng):
     x = tensor.matrix('x', dtype='int64')
 

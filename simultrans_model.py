@@ -158,17 +158,14 @@ class PIPE(object):
 # ==============================================================
 # Simultaneous Translation in Batch-mode
 # ==============================================================
-def simultaneous_decoding(f_sim_ctx,
-                          f_sim_init,
-                          f_sim_next,
-                          f_cost,
+def simultaneous_decoding(funcs,
                           _policy,
                           srcs,     # source sentences
                           trgs,     # taeget sentences
                           t_idict = None,
                           step=1, peek=1, sidx=3,
                           n_samples=10,
-                          maxlen=200,
+                          maxlen=120,
                           reward_config=None,
                           train=False,
                           use_forget=False,
@@ -178,23 +175,26 @@ def simultaneous_decoding(f_sim_ctx,
                           use_coverage=False,
                           on_groundtruth=0,
                           src_eos=True):
-    """
-    :param f_init:     initializer using the first "sidx" words.
-    :param f_sim_next:
-    :param f_partial:
-    :param src:        the original input needed to be translated (just for the speed)
-    :param step:       step_size for each wait
-    :param peek:
-    :param sidx:       pre-read sidx words from the source
-    :return:
-    """
+
+    # unzip functions
+    f_sim_ctx     = funcs[0]
+    f_sim_init    = funcs[1]
+    f_sim_next    = funcs[2]
+    f_cost        = funcs[3]
+
+    if reward_config['finetune']:
+        ff_init   = funcs[4]
+        ff_cost   = funcs[5]
+        ff_update = funcs[6]
+
+
     Statistcs     = OrderedDict()
 
     n_sentences   = len(srcs)
     n_out         = 3 if use_forget else 2
     max_steps     = -1
 
-    _probs        = numpy.zeros((3, )) if use_forget else numpy.zeros((2, ))
+    _probs        = numpy.zeros((n_out, ))
     _total        = 0
 
     # check
@@ -202,9 +202,9 @@ def simultaneous_decoding(f_sim_ctx,
     #     print 'use greedy policy'
 
 
-    # ================================================================================================= #
+    # ============================================================================ #
     # Generating Trajectories based on Current Policy
-    # ================================================================================================= #
+    # ============================================================================ #
 
     live_k    = (n_samples + on_groundtruth) * n_sentences
     live_all  = live_k
@@ -259,14 +259,14 @@ def simultaneous_decoding(f_sim_ctx,
         secs += copy.deepcopy(secs0)
 
 
-    # ====================================================================================== #
+    #============================================================================ #
     # PIPE for message passing
-    # ====================================================================================== #
+    # =========================================================================== #
     pipe      = PIPE(['sample', 'score', 'action', 'obs', 'attentions',
-                      'old_attend', 'coverage', 'source', 'forgotten','secs'])
+                      'old_attend', 'coverage', 'source', 'forgotten', 'secs', 'cmask'])
 
     # Build for the temporal results: hyp-message
-    for key in ['sample', 'obs', 'attentions', 'hidden', 'old_attend']:
+    for key in ['sample', 'obs', 'attentions', 'hidden', 'old_attend', 'cmask']:
         pipe.init_hyp(key, live_k)
 
     # special care
@@ -319,7 +319,7 @@ def simultaneous_decoding(f_sim_ctx,
 
 
         for key in ['sample', 'score', 'heads', 'attentions', 'old_attend', 'coverage', 'source',
-                    'mask', 'ctx', 'secs', 'states']:
+                    'mask', 'ctx', 'secs', 'states', 'cmask']:
             pipe.init_new_hyp(key, use_copy=True)
 
         for key in ['action', 'forgotten', 'obs', 'hidden']:
@@ -330,11 +330,7 @@ def simultaneous_decoding(f_sim_ctx,
 
         # current maximum
         cid    = cov.argmax(axis=-1)
-        C      = cov.max(axis=-1)
 
-        # make the source length as an input
-        slens  = (pipe.new_hyp_messages['heads'][:, 0] - pipe.new_hyp_messages['heads'][:, 2]).astype('float32')
-        next_o = numpy.concatenate([next_o, slens[:, None]], axis=-1)
 
         # Rollout the action.
         _actions, _aprop, _hidden, _z = _policy.action(next_o, prev_hid)  # input the current observation
@@ -366,6 +362,12 @@ def simultaneous_decoding(f_sim_ctx,
             if reward_config['greedy'] and (pipe.new_hyp_messages['heads'][idx, 2]
                                          >= pipe.new_hyp_messages['heads'][idx, 0]):
                 a = 1 # in greedy mode. must end.
+
+            # must read the whole sentence
+            #if pipe.new_hyp_messages['heads'][idx, 0] < pipe.new_hyp_messages['secs'][idx][1]:
+            #    if wi == 0: # end before read the last source words --->  wait!!
+            #        a = 0
+
 
             # message appending
             pipe.append('obs',       next_o[idx],   idx=idx, use_hyp=True)
@@ -399,6 +401,8 @@ def simultaneous_decoding(f_sim_ctx,
                 head_t = pipe.new_hyp_messages['source'][idx]
                 if head_t == -1:  # use generated samples
                     pipe.add('sample', [wi], idx)
+                    pipe.add('cmask',[mask], idx)
+
                 else:
                     pipe.add('sample', [trg[head_t] if head_t < len(trg) else 0], idx)  # use ground-truth
                     pipe.new_hyp_messages['source'][idx] += 1
@@ -444,8 +448,10 @@ def simultaneous_decoding(f_sim_ctx,
         #  kill the completed samples, so I need to build new hyp-messages
         pipe.clean_hyp()
 
-        for key in ['sample', 'score', 'heads', 'mask', 'states', 'coverage', 'forgotten',
-                    'action', 'obs', 'ctx', 'secs', 'attentions', 'hidden', 'old_attend', 'source']:
+        for key in ['sample', 'score', 'heads', 'mask',
+                    'states', 'coverage', 'forgotten',
+                    'action', 'obs', 'ctx', 'secs',
+                    'attentions', 'hidden', 'old_attend', 'source', 'cmask']:
             pipe.init_hyp(key)
 
         for idx in xrange(len(pipe.new_hyp_messages['sample'])):
@@ -458,7 +464,7 @@ def simultaneous_decoding(f_sim_ctx,
                    # or (pipe.new_hyp_messages['secs'][idx][2]==-1)):        # get into something wrong
 
                 for key in ['sample', 'score', 'action', 'obs', 'attentions',
-                            'old_attend', 'coverage', 'source', 'forgotten']:
+                            'old_attend', 'coverage', 'source', 'forgotten', 'cmask']:
                     pipe.append_new(key, idx, hyper=False)
 
                 pipe.messages['secs'].append(pipe.new_hyp_messages['secs'][idx])
@@ -469,7 +475,7 @@ def simultaneous_decoding(f_sim_ctx,
 
                 for key in ['sample', 'score', 'heads', 'states', 'action',
                             'obs', 'attentions', 'hidden',
-                            'old_attend', 'coverage', 'source', 'forgotten']:
+                            'old_attend', 'coverage', 'source', 'forgotten', 'cmask']:
                     pipe.append_new(key, idx, hyper=True)
 
                 # *** special care ***
@@ -506,7 +512,7 @@ def simultaneous_decoding(f_sim_ctx,
 
     Ref   = []
     Sys   = []
-    
+
     Words = []
     SWord = []
 
@@ -517,6 +523,7 @@ def simultaneous_decoding(f_sim_ctx,
         y_mask      = numpy.ones_like(y, dtype='float32')
         steps       = len(act)
 
+
         # turn back to sentence level
         words       = _seqs2words([sp], t_idict)[0]
         decoded     = _bpe2words([words])[0].split()
@@ -525,7 +532,7 @@ def simultaneous_decoding(f_sim_ctx,
         Sys        += [decoded]
         Words      += [words]
         SWord      += [srcs[sec_info[0]]]
-        
+
         # -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
         # reward configs
         keys = {"steps": steps, "y":y, "y_mask": y_mask, "x_mask": x_mask,
@@ -547,7 +554,6 @@ def simultaneous_decoding(f_sim_ctx,
         if steps > max_steps:
             max_steps = steps
 
-        # Rk    += sec_info[2] * 10000
         R     += [Rk]
         track += [(quality, delay, reward)]
 
@@ -563,7 +569,8 @@ def simultaneous_decoding(f_sim_ctx,
     # --------------------------------------------------- #
     # collect information
     keywords     = ['sample', 'action', 'obs', 'forgotten', 'secs',
-                    'attentions', 'old_attend', 'score', 'track', 'R', 'Ref', 'Sys']
+                    'attentions', 'old_attend', 'score', 'track',
+                    'R', 'Ref', 'Sys', 'cmask']
     for k in keywords:
         if k not in Statistcs:
             Statistcs[k]  = pipe.messages[k]
@@ -572,15 +579,19 @@ def simultaneous_decoding(f_sim_ctx,
 
     Statistcs['Words'] = Words
     Statistcs['SWord'] = SWord
-            
+
     # If not train, End here
     if not train:
         return Statistcs
 
 
-    # ================================================================================================= #
+    print len(Statistcs['cmask'])
+    print len(Statistcs['cmask'][0])
+    print Statistcs['cmask'][0][0].shape
+    sys.exit(1)
+    # ================================================================= #
     # Policy Gradient over Trajectories
-    # ================================================================================================= #
+    # ================================================================= #
     # print Act_masks
     # p rint Actions
 
@@ -595,6 +606,14 @@ def simultaneous_decoding(f_sim_ctx,
 
     # learning
     info    = _policy.get_learner()([p_obs, p_mask], p_act, p_r)
+
+
+    # ================================================================ #
+    # Policy Gradient for the underlying NMT model
+    if reward_config['finetune']:
+        pass
+
+
 
     # add the reward statistics
     q, d, r = zip(*Statistcs['track'])

@@ -107,9 +107,9 @@ def run_simultrans(model,
     ## use additional input for the policy network
     options['pre'] = config['pre']
 
-    # ================================================================================= #
+    # ========================================================================= #
     # Build a Simultaneous Translator
-    # ================================================================================= #
+    # ========================================================================= #
 
     # allocate model parameters
     params = init_params(options)
@@ -126,31 +126,35 @@ def run_simultrans(model,
     # functions for sampler
     f_sim_ctx, f_sim_init, f_sim_next = build_simultaneous_sampler(tparams, options, trng)
 
-    # function for finetune
-    if config['finetune'] != 'nope':
-        f_fine_init, f_fine_cost, f_fine_update = build_fine(tparams, options,
-                                                             fullmodel=True if config['finetune'] == 'full'
-                                                             else False)
+    # function for finetune the underlying model
+    if config['finetune']:
+        ff_init, ff_cost, ff_update = build_simultaneous_model(tparams, options, rl=True)
+        funcs = [f_sim_ctx, f_sim_init, f_sim_next, f_cost, ff_init, ff_cost, ff_update]
+
+    else:
+        funcs = [f_sim_ctx, f_sim_init, f_sim_next, f_cost]
+
 
     def _translate(src, trg, train=False, samples=config['sample'], greedy=False):
         ret = simultaneous_decoding(
-            f_sim_ctx, f_sim_init,
-            f_sim_next, f_cost,
+            funcs,
             _policy,
             src, trg, word_idict_trg,
             step=config['step'], peek=config['peek'], sidx=config['s0'],
             n_samples=samples,
-            reward_config={'target': config['target'],
+            reward_config={'target': config['target_ap'],
+                            'cw':    config['target_cw'],
                            'gamma':  config['gamma'],
                            'Rtype':  config['Rtype'],
                            'maxsrc': config['maxsrc'],
                            'greedy': greedy,
-                           'upper':  config['upper']},
+                           'upper':  config['upper'],
+                           'finetune': config['finetune']},
             train=train,
             use_forget=config['forget'],
             use_newinput=config['pre'],
             use_coverage=config['coverage'],
-            on_groundtruth=0 if config['finetune'] == 'nope' else 10)
+            on_groundtruth = 0)
 
         return ret
 
@@ -221,25 +225,12 @@ def run_simultrans(model,
         reference2 = []
         system2    = []
 
-        if it % valid_freq == 0:
+        if it % valid_freq == (valid_freq-1):
             print 'start validation'
 
             collections = [[], [], [], [], []]
             probar_v = Progbar(valid_num / 64 + 1)
             for ij, (srcs, trgs) in enumerate(validIter):
-
-                # new_srcs, new_trgs = [], []
-
-                # for src, trg in zip(srcs, trgs):
-                #     if len(src) < config['s0']:
-                #         continue  # ignore when the source sentence is less than sidx. we don't use the policy\
-                #     else:
-                #         new_srcs += [src]
-                #         new_trgs += [trg]
-
-                # if len(new_srcs) == 0:
-                #     continue
-                # srcs, trgs = new_srcs, new_trgs
 
                 statistics = _translate(srcs, trgs, train=False, samples=1, greedy=True)
 
@@ -314,6 +305,7 @@ def run_simultrans(model,
                 for ref in reference:
                     fout.write('{}\n'.format(' '.join(ref[0])))
 
+            history += [collections]
 
 
         if config['upper']:
@@ -334,11 +326,12 @@ def run_simultrans(model,
             continue
 
         srcs, trgs = new_srcs, new_trgs
-        try:
-            statistics, info, pipe_t = _translate(srcs, trgs, train=True)
-        except Exception:
-            print 'translate a empty sentence. bug.'
-            continue
+        #try:
+        statistics, info, pipe_t = _translate(srcs, trgs, train=True)
+
+        #except Exception:
+        #    print 'translate a empty sentence. bug.'
+        #    continue
 
 
         # samples, scores, actions, rewards, info, pipe_t = _translate(srcs, trgs, train=True)
@@ -407,23 +400,19 @@ def run_simultrans(model,
             for j in xrange(len(samples)):
 
                 if statistics['secs'][j][0] == 0:
-                    if c < 5:
+                    if c < (config['sample']/2.):
                         c += 1
+                        continue
 
                     print '---ID: {}'.format(_policy.id)
                     print 'sample: ', samples[j]
-                    # print 'action: ', ','.join(
-                    #     ['{}({})'.format(action_space[t], f)
-                    #      for t, f in
-                    #          zip(statistics['action'][j], statistics['forgotten'][j])])
-
                     print 'action: ', ','.join(
                         ['{}'.format(action_space[t])
                          for t in statistics['action'][j]])
 
                     print 'quality:', statistics['track'][j][0]
                     print 'delay:',   statistics['track'][j][1]
-                    # print 'score:', statistics['score'][j]
+                    print 'reward:',  statistics['track'][j][2]
                     break
 
         values = [(w, info[w]) for w in info]

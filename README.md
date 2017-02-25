@@ -28,15 +28,25 @@ In our experiments, we pretrained single-layer undirectional NMT for both RU-EN 
 * We provided the preprocessed dataset and the pretrained models: (https://drive.google.com/drive/folders/0B0miOG3ks5c1SVljM1Q5SURibU0?usp=sharing)
 
 ### Pretrain your own model:
-Follow the instructions and setup the configurations in `config.py` and then excute:
+Follow the instructions and setup the configurations in `config.py (pretrain_config)` and then excute:
 ```bash
 $ export THEANO_FLAGS=device=gpu,floatX=float32
 $ python pretrain_uni.py
 ```
 It normally takes 1~2 weeks for training an unidirectional NMT model for WMT15 corpora.
 
+### Evaluate the BLEU score for a pre-trained NMT model
+TBA.
 
 Simultaneous Translation:
 ----------------------
 ### Training an Agent
-TBA
+Follow the instructions and setup the configurations in `config.py (rl_config)` and then excute:
+```bash
+$ export THEANO_FLAGS=device=gpu,floatX=float32
+$ python simultrans_train.py
+```
+### Monitoring
+TBA.
+
+### Visualization

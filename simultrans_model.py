@@ -437,13 +437,11 @@ def simultaneous_decoding(funcs,
             else:
                 raise NotImplementedError
 
-
         # check the correctness, or given a very negative reward
         # print pipe.new_hyp_messages['heads'][:, 0], pipe.new_hyp_messages['secs']
         for idx in xrange(live_k):
             if pipe.new_hyp_messages['heads'][idx, 0] >= pipe.new_hyp_messages['secs'][idx][1]:  # the read head already reached the end.
                 pipe.new_hyp_messages['secs'][idx][2] = -1
-
 
         #  kill the completed samples, so I need to build new hyp-messages
         pipe.clean_hyp()
@@ -451,18 +449,17 @@ def simultaneous_decoding(funcs,
         for key in ['sample', 'score', 'heads', 'mask',
                     'states', 'coverage', 'forgotten',
                     'action', 'obs', 'ctx', 'secs',
-                    'attentions', 'hidden', 'old_attend', 'source', 'cmask']:
+                    'attentions', 'hidden', 'old_attend',
+                    'source', 'cmask']:
             pipe.init_hyp(key)
 
         for idx in xrange(len(pipe.new_hyp_messages['sample'])):
-
 
             if (len(pipe.new_hyp_messages['sample'][idx]) > 0) and \
                   ((pipe.new_hyp_messages['sample'][idx][-1] == 0)         # translate over
                    or (pipe.new_hyp_messages['heads'][idx][1] >= maxlen)   # exceed the maximum length
                    or (step > (1.5 * maxlen))):
-                   # or (pipe.new_hyp_messages['secs'][idx][2]==-1)):        # get into something wrong
-
+                # or (pipe.new_hyp_messages['secs'][idx][2]==-1)):        # get into something wrong
                 for key in ['sample', 'score', 'action', 'obs', 'attentions',
                             'old_attend', 'coverage', 'source', 'forgotten', 'cmask']:
                     pipe.append_new(key, idx, hyper=False)
@@ -503,7 +500,6 @@ def simultaneous_decoding(funcs,
                                  else -1 for w in pipe.hyp_messages['sample']],
                                 dtype='int64')
 
-
     # =======================================================================
     # Collecting Rewards.
     # =======================================================================
@@ -522,7 +518,6 @@ def simultaneous_decoding(funcs,
         y           = numpy.asarray(sp,  dtype='int64')[:, None]
         y_mask      = numpy.ones_like(y, dtype='float32')
         steps       = len(act)
-
 
         # turn back to sentence level
         words       = _seqs2words([sp], t_idict)[0]
@@ -584,33 +579,35 @@ def simultaneous_decoding(funcs,
     if not train:
         return Statistcs
 
+    # print len(Statistcs['cmask'])
+    # print len(Statistcs['cmask'][0])
+    # print Statistcs['cmask'][0][0].shape
+    # sys.exit(1)
 
-    print len(Statistcs['cmask'])
-    print len(Statistcs['cmask'][0])
-    print Statistcs['cmask'][0][0].shape
-    sys.exit(1)
     # ================================================================= #
-    # Policy Gradient over Trajectories
+    # Policy Gradient over Trajectories for the Agent
     # ================================================================= #
     # print Act_masks
     # p rint Actions
 
-    p_obs, p_mask   \
-            = _padding(Statistcs['obs'],
-                       shape=(max_steps, n_samples * n_sentences, _policy.n_in),
-                       return_mask=True, sidx=sidx)
-    p_r     = _padding(Statistcs['R'],
-                       shape=(max_steps, n_samples * n_sentences))
-    p_act   = _padding(Statistcs['action'],
-                       shape=(max_steps, n_samples * n_sentences), dtype='int64')
+    p_obs, p_mask   = _padding(Statistcs['obs'],
+                               shape=(max_steps, n_samples * n_sentences, _policy.n_in),
+                               return_mask=True, sidx=sidx)
+    p_r             = _padding(Statistcs['R'],
+                               shape=(max_steps, n_samples * n_sentences))
+    p_act           = _padding(Statistcs['action'],
+                               shape=(max_steps, n_samples * n_sentences), dtype='int64')
 
     # learning
     info    = _policy.get_learner()([p_obs, p_mask], p_act, p_r)
 
-
     # ================================================================ #
     # Policy Gradient for the underlying NMT model
+    # ================================================================ #
     if reward_config['finetune']:
+        fx      = numpy.tile(x, [1, n_samples])
+        fx_mask = numpy.tile(x_mask, [1, n_samples])
+
         pass
 
 

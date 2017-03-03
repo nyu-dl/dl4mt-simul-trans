@@ -299,7 +299,6 @@ def build_simultaneous_model(tparams, options, fullmodel=True, rl=True):
     cost       = -tensor.log(probs.flatten()[y_flat_idx] + TINY)
     cost       = cost.reshape([y.shape[0], y.shape[1]])
 
-
     if rl:
         advantages = tensor.matrix('advantages')
         a_cost = tensor.mean((y_mask * cost * advantages).sum(0))
@@ -318,7 +317,6 @@ def build_simultaneous_model(tparams, options, fullmodel=True, rl=True):
                 new_grads.append(tensor.switch(g2 > (clip_c ** 2), g / tensor.sqrt(g2) * clip_c, g))
             grad = new_grads
         return grad
-
 
     lr    = tensor.scalar(name='lr')
     if not rl:

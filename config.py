@@ -57,7 +57,6 @@ def rl_config():
     # work-space
     config['workspace'] = './'
 
-
     # training set (source, target); or leave it None, agent will use the same corpus saved in the model
     config['datasets'] = ['/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.en.c0.tok.clean.bpe20k.np',
                           '/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.zh.c0.tok.clean.bpe20k.np']

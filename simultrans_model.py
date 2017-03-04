@@ -155,6 +155,7 @@ class PIPE(object):
         self.messages = sample
         return truth
 
+
 # ==============================================================
 # Simultaneous Translation in Batch-mode
 # ==============================================================
@@ -187,7 +188,6 @@ def simultaneous_decoding(funcs,
         ff_cost   = funcs[5]
         ff_update = funcs[6]
 
-
     Statistcs     = OrderedDict()
 
     n_sentences   = len(srcs)
@@ -200,7 +200,6 @@ def simultaneous_decoding(funcs,
     # check
     # if reward_config['greedy']:
     #     print 'use greedy policy'
-
 
     # ============================================================================ #
     # Generating Trajectories based on Current Policy
@@ -353,21 +352,20 @@ def simultaneous_decoding(funcs,
             # for wait:
             if reward_config.get('upper', False):
                 # a = 1 - pipe.hyp_messages['action'][idx][-1]
-                a = 0 # testing upper bound: only wait
+                a = 0  # testing upper bound: only wait
 
             if reward_config['greedy'] and (pipe.new_hyp_messages['heads'][idx, 0]
                                          >= pipe.new_hyp_messages['secs'][idx][1]):
-                a = 1 # in greedy mode. must end.
+                a = 1  # in greedy mode. must end.
 
             if reward_config['greedy'] and (pipe.new_hyp_messages['heads'][idx, 2]
                                          >= pipe.new_hyp_messages['heads'][idx, 0]):
-                a = 1 # in greedy mode. must end.
+                a = 1  # in greedy mode. must end.
 
             # must read the whole sentence
             #if pipe.new_hyp_messages['heads'][idx, 0] < pipe.new_hyp_messages['secs'][idx][1]:
             #    if wi == 0: # end before read the last source words --->  wait!!
             #        a = 0
-
 
             # message appending
             pipe.append('obs',       next_o[idx],   idx=idx, use_hyp=True)
@@ -418,7 +416,6 @@ def simultaneous_decoding(funcs,
                 pipe.new_hyp_messages['states'][idx]    = next_z[idx]
                 pipe.new_hyp_messages['heads'][idx, 1] += 1
                 pipe.new_hyp_messages['coverage'][idx]  = cov[idx]
-
 
             # for forget:
             elif a == 2:

@@ -3,14 +3,16 @@ Configuration for Simultaneous Neural Machine Translation
 """
 from collections import OrderedDict
 
+data_home = '/home/thoma/scratch/un16/'
+
 def pretrain_config():
     """Configuration for pretraining underlining NMT model."""
 
     config = dict()
 
     # training set (source, target)
-    config['datasets'] = ['/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.zh.c0.tok.clean.bpe20k.np',
-                          '/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.en.c0.tok.clean.bpe20k.np']
+    config['datasets'] = [data_home + 'train.un16.en-zh.zh.c0.tok.clean.bpe20k.np',
+                          data_home'train.un16.en-zh.en.c0.tok.clean.bpe20k.np']
 
     # validation set (source, target)
     config['valid_datasets'] = ['/misc/kcgscratch1/ChoGroup/thoma_data/un16/devset.un16.en-zh.zh.c0.tok.bpe20k.np',

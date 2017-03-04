@@ -12,15 +12,15 @@ def pretrain_config():
 
     # training set (source, target)
     config['datasets'] = [data_home + 'train.un16.en-zh.zh.c0.tok.clean.bpe20k.np',
-                          data_home'train.un16.en-zh.en.c0.tok.clean.bpe20k.np']
+                          data_home + 'train.un16.en-zh.en.c0.tok.clean.bpe20k.np']
 
     # validation set (source, target)
-    config['valid_datasets'] = ['/misc/kcgscratch1/ChoGroup/thoma_data/un16/devset.un16.en-zh.zh.c0.tok.bpe20k.np',
-                                '/misc/kcgscratch1/ChoGroup/thoma_data/un16/devset.un16.en-zh.en.c0.tok.bpe20k.np']
+    config['valid_datasets'] = [data_home + 'devset.un16.en-zh.zh.c0.tok.bpe20k.np',
+                                data_home + 'devset.un16.en-zh.en.c0.tok.bpe20k.np']
 
     # vocabulary (source, target)
-    config['dictionaries']   = ['/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.zh.c0.tok.clean.bpe20k.vocab.pkl',
-                                '/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.en.c0.tok.clean.bpe20k.vocab.pkl']
+    config['dictionaries']   = [data_home + 'train.un16.en-zh.zh.c0.tok.clean.bpe20k.vocab.pkl',
+                                data_home + 'train.un16.en-zh.en.c0.tok.clean.bpe20k.vocab.pkl']
 
     # save the model to
     config['saveto']      = '.pretraining/model_un16_bpe2k_uni_zh-en.npz'
@@ -60,16 +60,16 @@ def rl_config():
     config['workspace'] = './'
 
     # training set (source, target); or leave it None, agent will use the same corpus saved in the model
-    config['datasets'] = ['/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.en.c0.tok.clean.bpe20k.np',
-                          '/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.zh.c0.tok.clean.bpe20k.np']
+    config['datasets'] = [data_home + 'train.un16.en-zh.en.c0.tok.clean.bpe20k.np',
+                          data_home + 'train.un16.en-zh.zh.c0.tok.clean.bpe20k.np']
 
     # validation set (source, target); or leave it None, agent will use the same corpus saved in the model
-    config['valid_datasets'] = ['/misc/kcgscratch1/ChoGroup/thoma_data/un16/devset.un16.en-zh.en.c0.tok.bpe20k.np',
-                                '/misc/kcgscratch1/ChoGroup/thoma_data/un16/devset.un16.en-zh.zh.c0.tok.bpe20k.np']
+    config['valid_datasets'] = [data_home + 'devset.un16.en-zh.en.c0.tok.bpe20k.np',
+                                data_home + 'devset.un16.en-zh.zh.c0.tok.bpe20k.np']
 
     # vocabulary (source, target); or leave it None, agent will use the same dictionary saved in the model
-    config['dictionaries']   = ['/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.en.c0.tok.clean.bpe20k.vocab.pkl',
-                                '/misc/kcgscratch1/ChoGroup/thoma_data/un16/train.un16.en-zh.zh.c0.tok.clean.bpe20k.vocab.pkl']
+    config['dictionaries']   = [data_home + 'train.un16.en-zh.en.c0.tok.clean.bpe20k.vocab.pkl',
+                                data_home + 'train.un16.en-zh.zh.c0.tok.clean.bpe20k.vocab.pkl']
 
     # pretrained model
     config['model']  = '.pretrained/model_un16_bpe2k_uni_en-zh.npz'
@@ -91,7 +91,6 @@ def rl_config():
     policy['updater']   = 'REINFORCE'  # 'TRPO' not work well.
     policy['act_mask']  = True  # leave it default
 
-
     # old model parameters (maybe useless, leave them default)
     config['step']     = 1
     config['peek']     = 1
@@ -103,7 +102,6 @@ def rl_config():
     config['coverage'] = False
     config['upper']    = False
     config['finetune'] = 'nope'
-
 
     return policy, config
 

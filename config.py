@@ -3,7 +3,8 @@ Configuration for Simultaneous Neural Machine Translation
 """
 from collections import OrderedDict
 
-data_home = '/home/thoma/scratch/un16/'
+data_home  = '/mnt/scratch/un16/'
+model_home = '/mnt/scratch/simul/'
 
 def pretrain_config():
     """Configuration for pretraining underlining NMT model."""
@@ -23,7 +24,7 @@ def pretrain_config():
                                 data_home + 'train.un16.en-zh.en.c0.tok.clean.bpe20k.vocab.pkl']
 
     # save the model to
-    config['saveto']      = '.pretraining/model_un16_bpe2k_uni_zh-en.npz'
+    config['saveto']      = data_home + 'pretraining/model_un16_bpe2k_uni_zh-en.npz'
     config['reload_']     = True
 
     # model details
@@ -57,7 +58,7 @@ def rl_config():
     policy = OrderedDict()  # configuration for policy
 
     # work-space
-    config['workspace'] = './'
+    config['workspace'] = model_home
 
     # training set (source, target); or leave it None, agent will use the same corpus saved in the model
     config['datasets'] = [data_home + 'train.un16.en-zh.en.c0.tok.clean.bpe20k.np',
@@ -72,8 +73,8 @@ def rl_config():
                                 data_home + 'train.un16.en-zh.zh.c0.tok.clean.bpe20k.vocab.pkl']
 
     # pretrained model
-    config['model']  = '.pretrained/model_un16_bpe2k_uni_en-zh.npz'
-    config['option'] = '.pretrained/model_un16_bpe2k_uni_en-zh.npz.pkl'
+    config['model']  = model_home + '.pretrained/model_un16_bpe2k_uni_en-zh.npz'
+    config['option'] = model_home + '.pretrained/model_un16_bpe2k_uni_en-zh.npz.pkl'
 
     # critical training parameters.
     config['sample']    = 10

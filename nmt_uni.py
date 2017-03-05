@@ -230,7 +230,7 @@ def build_simultaneous_model(tparams, options, fullmodel=True, rl=True):
 
     # initial decoder state
     init_state  = get_layer('ff')[1](tparams, ctx_mean, options,
-                                    prefix='ff_state', activ='tanh')
+                                     prefix='ff_state', activ='tanh')
 
     print 'compile the initializer'
     f_init      = theano.function([x, x_mask], [ctx, init_state])
@@ -249,11 +249,11 @@ def build_simultaneous_model(tparams, options, fullmodel=True, rl=True):
     # decoder - pass through the decoder conditional gru with attention
     def _step(_emb, _y_mask, _c_mask, _init_state, _ctx):
         return get_layer(options['decoder'])[1](tparams, _emb, options,
-                                              prefix='decoder',
-                                              mask=_y_mask, context=_ctx,
-                                              context_mask=_c_mask,
-                                              one_step=True,
-                                              init_state=_init_state)
+                                                prefix='decoder',
+                                                mask=_y_mask, context=_ctx,
+                                                context_mask=_c_mask,
+                                                one_step=True,
+                                                init_state=_init_state)
 
     proj, _ = theano.scan(_step,
                           sequences=[emb, y_mask, c_mask],

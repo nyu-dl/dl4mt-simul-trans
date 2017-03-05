@@ -24,11 +24,13 @@ def _seqs2words(caps, idict):
         capsw.append(' '.join(ww))
     return capsw
 
+
 def _bpe2words(capsw):
     capw = []
     for cc in capsw:
         capw += [cc.replace('@@ ', '')]
     return capw
+
 
 def _action2delay(src, actions):
     delays = []
@@ -170,11 +172,14 @@ def simultaneous_decoding(funcs,
     for key in ['sample', 'score', 'action',
                 'obs', 'attentions', 'old_attend',
                 'coverage', 'forgotten',
-                'seq_info', 'cmask']:
+                'seq_info',
+                'cmask', 'source', 'i_mask']:
         pipe[key] = []
 
     # initialize h-pipe
-    for key in ['sample', 'obs', 'attentions', 'hidden', 'old_attend', 'cmask']:
+    for key in ['sample', 'obs', 'attentions',
+                'hidden', 'old_attend', 'cmask',
+                'source', 'i_mask']:
         h_pipe[key] = [[] for _ in range(live_k)]
 
     h_pipe['score']     = numpy.zeros(live_k).astype('float32')
@@ -414,7 +419,8 @@ def simultaneous_decoding(funcs,
         # reward configs
         # ----------------------------------------------------------------
         keys = {"steps": steps,
-                "y": y, "y_mask": y_mask, "x_mask": x_mask,
+                "y": y, "y_mask": y_mask,
+                "x_mask": x_mask,
                 "act": act, "src_max": src_max,
                 "ctx0": ctx0, "sidx": sidx,
                 "f_cost": f_cost, "alpha": 0.5,
@@ -471,6 +477,8 @@ def simultaneous_decoding(funcs,
     if reward_config['finetune']:
         fx      = numpy.tile(x, [1, n_samples])
         fx_mask = numpy.tile(x_mask, [1, n_samples])
+
+
 
         print fx.shape
         import sys; sys.exit(123)

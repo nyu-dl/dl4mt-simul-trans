@@ -369,8 +369,8 @@ def simultaneous_decoding(funcs,
 
         # make it numpy array
         for key in ['heads', 'score', 'coverage',
-                    'mask', 'ctx', 'states', 'hidden']:
-            h_pipe[key] = numpy.asarray(h_pipe)
+                    'mask', 'ctx', 'prev_z', 'hidden']:
+            h_pipe[key] = numpy.asarray(h_pipe[key])
         h_pipe['mask'] = h_pipe['mask'].T
 
         if h_pipe['ctx'].ndim == 3:

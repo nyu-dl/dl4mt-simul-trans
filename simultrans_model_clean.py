@@ -497,6 +497,7 @@ def simultaneous_decoding(funcs,
     # learning
     info    = _policy.get_learner()([p_obs, p_mask], p_act, p_r)
     p_adv   = info['advantages']
+    print p_act.shape,
     print p_adv.shape,
     print p_x.shape,
     print p_i_mask.shape,
@@ -504,6 +505,7 @@ def simultaneous_decoding(funcs,
     print p_y_mask.shape,
     print p_c_mask.shape
 
+    print p_act[:, 0]
     import sys;
     sys.exit(123)
     # ================================================================ #

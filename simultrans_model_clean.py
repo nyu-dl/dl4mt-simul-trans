@@ -154,8 +154,9 @@ def simultaneous_decoding(funcs,
 
     # if we have multiple samples for one input sentence
     mask      = numpy.tile(mask, [1, live_k])
-    z         = numpy.tile(z0,   [live_k / n_sentences, 1])
-    ctx       = numpy.tile(ctx,  [1, live_k / n_sentences, 1])
+    z         = numpy.tile(z0,   [n_samples, 1])
+    ctx       = numpy.tile(ctx,  [1, n_samples, 1])
+    x         = numpy.tile(x,    [1, n_samples])
     hidden    = numpy.tile(hidden0, [live_k, 1])
 
     seq_info  = []
@@ -178,8 +179,7 @@ def simultaneous_decoding(funcs,
 
     # initialize h-pipe
     for key in ['sample', 'obs', 'attentions',
-                'hidden', 'old_attend', 'cmask',
-                'source', 'i_mask']:
+                'hidden', 'old_attend', 'cmask']:
         h_pipe[key] = [[] for _ in range(live_k)]
 
     h_pipe['score']     = numpy.zeros(live_k).astype('float32')
@@ -188,9 +188,11 @@ def simultaneous_decoding(funcs,
     h_pipe['coverage']  = numpy.zeros((live_k, ctx.shape[0])).astype('float32')
 
     h_pipe['mask']      = mask
-    h_pipe['ctx']       = ctx
+    h_pipe['ctx']       = ctx    # contexts
+    h_pipe['source']    = x      # source words
     h_pipe['seq_info']  = seq_info
     h_pipe['heads']     = numpy.asarray([[sidx, 0, 0]] * live_k)  # W C F
+    h_pipe['i_mask']    = mask
 
     h_pipe['prev_w']    = -1 * numpy.ones((live_k, )).astype('int64')
     h_pipe['prev_z']    = z
@@ -233,7 +235,7 @@ def simultaneous_decoding(funcs,
         for key in ['sample', 'score', 'heads', 'attentions',
                     'old_attend', 'coverage', 'mask', 'ctx',
                     'seq_info', 'cmask', 'obs',
-                    'prev_z',
+                    'prev_z', 'source', 'i_mask',
                     'action', 'forgotten']:
 
             n_pipe[key] = copy.copy(h_pipe[key])
@@ -295,6 +297,7 @@ def simultaneous_decoding(funcs,
                     _ctx0     = ctx0[n_pipe['seq_info'][idx][0]][:, None, :]
                     _z0       = f_sim_init(_ctx0[:temp_sidx])  # initializer
                     n_pipe['prev_z'][idx] = _z0
+                    n_pipe['i_mask'][temp_sidx, idx] = 1
 
             # for write:
             elif a == 1:
@@ -344,7 +347,7 @@ def simultaneous_decoding(funcs,
                     'prev_z', 'coverage', 'forgotten',
                     'action', 'obs', 'ctx', 'seq_info',
                     'attentions', 'hidden', 'old_attend',
-                    'cmask']:
+                    'cmask', 'source', 'i_mask']:
             h_pipe[key] = []
 
         for idx in xrange(len(n_pipe['sample'])):
@@ -358,6 +361,9 @@ def simultaneous_decoding(funcs,
                             'attentions', 'old_attend', 'coverage',
                             'forgotten', 'cmask', 'seq_info']:
                     pipe[key].append(n_pipe[key][idx])
+
+                pipe['i_mask'].append(n_pipe['i_mask'][:, idx])
+                pipe['source'].append(n_pipe['source'][:, idx])
                 live_k -= 1
 
             else:
@@ -371,15 +377,21 @@ def simultaneous_decoding(funcs,
 
                 h_pipe['mask'].append(n_pipe['mask'][:, idx])
                 h_pipe['ctx'].append(n_pipe['ctx'][:, idx])
+                h_pipe['i_mask'].append(n_pipe['i_mask'][:, idx])
+                h_pipe['source'].append(n_pipe['source'][:, idx])
 
         # make it numpy array
         for key in ['heads', 'score', 'coverage',
-                    'mask', 'ctx', 'prev_z', 'hidden']:
+                    'mask', 'ctx', 'prev_z', 'hidden',
+                    'source', 'i_mask']:
             h_pipe[key] = numpy.asarray(h_pipe[key])
-        h_pipe['mask'] = h_pipe['mask'].T
+        h_pipe['mask']   = h_pipe['mask'].T
+        h_pipe['source'] = h_pipe['source'].T
+        h_pipe['i_mask'] = h_pipe['i_mask'].T
 
         if h_pipe['ctx'].ndim == 3:
-            h_pipe['ctx']  = h_pipe['ctx'].transpose(1, 0, 2)
+            h_pipe['ctx']    = h_pipe['ctx'].transpose(1, 0, 2)
+
         elif h_pipe['ctx'].ndim == 2:
             h_pipe['ctx']  = h_pipe['ctx'][:, None, :]
 
@@ -470,7 +482,14 @@ def simultaneous_decoding(funcs,
     # learning
     info    = _policy.get_learner()([p_obs, p_mask], p_act, p_r)
     p_adv   = info['advantages']
+    print p_adv.shape
+    print len(pipe['source']),
+    print len(pipe['i_mask']),
+    print len(pipe['sample']),
+    print len(pipe['cmask']),
 
+    import sys;
+    sys.exit(123)
     # ================================================================ #
     # Policy Gradient for the underlying NMT model
     # ================================================================ #
@@ -481,7 +500,7 @@ def simultaneous_decoding(funcs,
 
 
         print fx.shape
-        import sys; sys.exit(123)
+
         pass
 
 

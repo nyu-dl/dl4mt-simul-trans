@@ -506,6 +506,12 @@ def simultaneous_decoding(funcs,
     print p_c_mask.shape
 
     print p_act[:, 0]
+
+    new_adv = [p_adv[p_act[:, s] == 1, s] for s in range(p_adv.shape[1])]
+    new_adv = _padding(new_adv, shape=(max_w_steps, n_samples * n_sentences))
+    print new_adv.shape
+    print new_adv[:, 0]
+
     import sys;
     sys.exit(123)
     # ================================================================ #

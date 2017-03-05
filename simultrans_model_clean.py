@@ -505,7 +505,7 @@ def simultaneous_decoding(funcs,
         new_adv = [p_adv[p_act[:, s] == 1, s] for s in range(p_adv.shape[1])]
         new_adv = _padding(new_adv, shape=(max_w_steps, n_samples * n_sentences))
 
-        a_cost, cost = ff_cost(p_x, p_i_mask, p_y, p_y_mask, p_c_mask, new_adv)
+        a_cost, cost = ff_cost(p_x, p_i_mask, p_y, p_y_mask, p_c_mask.transpose(0, 2, 1), new_adv)
         print a_cost
         print cost
         ff_update(2e-5)

@@ -11,8 +11,8 @@ from nmt_uni import *
 from policy import Controller as Policy
 from utils import Progbar, Monitor
 
-from simultrans_model import simultaneous_decoding
-from simultrans_model import _seqs2words, _bpe2words, PIPE, _padding
+from simultrans_model_clean import simultaneous_decoding
+from simultrans_model_clean import _seqs2words, _bpe2words, _padding
 
 import time
 
@@ -211,7 +211,10 @@ def run_simultrans(model,
     action_space = ['W', 'C', 'F']
     Log_avg = {}
     time0 = timer()
-    pipe = PIPE(['x', 'x_mask', 'y', 'y_mask', 'c_mask'])
+
+    pipe = OrderedDict()
+    for key in ['x', 'x_mask', 'y', 'y_mask', 'c_mask']:
+        pipe[key] = []
 
     for it, (srcs, trgs) in enumerate(trainIter):  # only one sentence each iteration
         if it < last_it:  # go over the scanned lines.

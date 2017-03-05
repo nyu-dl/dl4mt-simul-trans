@@ -73,90 +73,6 @@ def _padding(arrays, shape, dtype='float32', return_mask=False, sidx=0):
     return B
 
 
-class PIPE(object):
-    def __init__(self, keys=None):
-        self.messages          = OrderedDict()
-        self.hyp_messages      = OrderedDict()
-        self.new_hyp_messages  = OrderedDict()
-        for key in keys:
-            self.messages[key] = []
-
-    def reset(self):
-        for key in self.messages:
-            self.messages[key] = []
-
-        self.hyp_messages = OrderedDict()
-        self.new_hyp_messages = OrderedDict()
-
-    def clean_hyp(self):
-        self.hyp_messages      = OrderedDict()
-
-    def clean_new_hyp(self):
-        self.new_hyp_messages  = OrderedDict()
-
-    def init_hyp(self, key, live_k=None):
-        if live_k is not None:
-            self.hyp_messages[key] = [[] for _ in xrange(live_k)]
-        else:
-            self.hyp_messages[key] = []
-
-    def init_new_hyp(self, key, use_copy=False):
-        if use_copy:
-            self.new_hyp_messages[key] = copy.copy(self.hyp_messages[key])
-        else:
-            self.new_hyp_messages[key] = []
-
-    def append(self, key, new, idx=None, use_hyp=False):
-        if not use_hyp:
-            self.new_hyp_messages[key].append(new)
-        else:
-            self.new_hyp_messages[key].append(self.hyp_messages[key][idx] + [new])
-
-    def append_new(self, key, idx, hyper=True):
-        if hyper:
-            self.hyp_messages[key].append(self.new_hyp_messages[key][idx])
-        else:
-            # print self.messages['sample']
-            self.messages[key].append(self.new_hyp_messages[key][idx])
-
-    def add(self, key, new, idx):
-        self.new_hyp_messages[key][idx] += new
-
-    def asarray(self, key, replace=False):
-        if replace:
-            self.hyp_messages[key] = numpy.array(self.hyp_messages[key])
-        else:
-            return numpy.array(self.hyp_messages[key], dtype='float32')
-
-    def split(self):
-        truth  = OrderedDict()
-        sample = OrderedDict()
-
-
-        for key in self.messages:
-            if key == 'source':
-                continue
-
-            truth[key]  = []
-            sample[key] = []
-
-            if key == 'mask':
-                for idx in xrange(len(self.messages['source'])):
-                    if self.messages['source'][idx] < 0:
-                        sample[key].append(self.messages[key][:, idx])
-                    else:
-                        truth[key].append(self.messages[key][:, idx])
-            else:
-                for idx in xrange(len(self.messages['source'])):
-                    if self.messages['source'][idx] < 0:
-                        sample[key].append(self.messages[key][idx])
-                    else:
-                        truth[key].append(self.messages[key][idx])
-
-        self.messages = sample
-        return truth
-
-
 # ==============================================================
 # Simultaneous Translation in Batch-mode
 # ==============================================================
@@ -187,9 +103,6 @@ def simultaneous_decoding(funcs,
         ff_init   = funcs[4]
         ff_cost   = funcs[5]
         ff_update = funcs[6]
-
-    # Collect information
-    Statistcs     = OrderedDict()
 
     n_sentences   = len(srcs)
     n_out         = 3 if use_forget else 2
@@ -252,7 +165,6 @@ def simultaneous_decoding(funcs,
     # =========================================================================== #
     pipe   = OrderedDict()
     h_pipe = OrderedDict()
-    n_pipe = OrderedDict()
 
     # initialize pipes
     for key in ['sample', 'score', 'action',
@@ -315,12 +227,12 @@ def simultaneous_decoding(funcs,
 
         for key in ['sample', 'score', 'heads', 'attentions',
                     'old_attend', 'coverage', 'mask', 'ctx',
-                    'seq_info', 'states', 'cmask']:
+                    'seq_info', 'cmask', 'obs',
+                    'prev_z',
+                    'action', 'forgotten']:
 
             n_pipe[key] = copy.copy(h_pipe[key])
-
-        for key in ['action', 'forgotten', 'obs', 'hidden']:
-            n_pipe[key] = []
+        n_pipe['hidden'] = []
 
         cov    = n_pipe['coverage'] * n_pipe['mask'].T + next_a  # clean that has been forgotten
         cid    = cov.argmax(axis=-1)
@@ -342,149 +254,134 @@ def simultaneous_decoding(funcs,
 
             # action
             a      = _actions[idx]
-            c_mask = n_pipe['mask'][idx]
+            c_mask = n_pipe['mask'][:, idx]
 
             if reward_config.get('upper', False):
                 a = 0  # testing upper bound: only wait
 
-            if reward_config['greedy'] and (n_pipe['heads'][idx, 0] >= n_pipe['seq_info'][idx][1]):
+            if reward_config['greedy'] and \
+                    (n_pipe['heads'][idx, 0] >= n_pipe['seq_info'][idx][1]):
                 a = 1  # in greedy mode. must end.
 
-            if reward_config['greedy'] and (n_pipe['heads'][idx, 2] >= n_pipe['heads'][idx, 0]):
+            if reward_config['greedy'] and \
+                    (n_pipe['heads'][idx, 2] >= n_pipe['heads'][idx, 0]):
                 a = 1  # in greedy mode. must end.
 
             # must read the whole sentence
             # pass
 
             # message appending
-            pipe.append('obs',       next_o[idx],   idx=idx, use_hyp=True)
-            pipe.append('action',    a,             idx=idx, use_hyp=True)   # collect action.
-            pipe.append('hidden',    _hidden[idx])
+            n_pipe['obs'][idx].append(next_o[idx])
+            n_pipe['action'][idx].append(a)
+            n_pipe['hidden'].append(_hidden[idx])
 
-            # print pipe.hyp_messages['heads'][idx]
+            # change the behavior of NMT model
             if a == 0:
                 # read-head move on one step
-                # print 'p', pipe.hyp_messages['heads'][idx, 0], pipe.hyp_messages['secs'][idx]
+                if n_pipe['heads'][idx, 0] < n_pipe['seq_info'][idx][1]:
+                    n_pipe['mask'][n_pipe['heads'][idx, 0], idx] = 1
+                    n_pipe['heads'][idx, 0] += 1
 
-                if pipe.new_hyp_messages['heads'][idx, 0] < pipe.new_hyp_messages['secs'][idx][1]:
-                    pipe.new_hyp_messages['mask'][pipe.new_hyp_messages['heads'][idx, 0], idx] = 1
-                    pipe.new_hyp_messages['heads'][idx, 0] += 1
-
-                pipe.append('forgotten', -1, idx=idx, use_hyp=True)
+                n_pipe['forgotten'][idx].append(-1)
 
                 # if the first word is still waiting for decoding
-                # """
-                if numpy.sum(pipe.new_hyp_messages['action'][idx]) == 0:
-                    temp_sidx = pipe.new_hyp_messages['heads'][idx, 0]
-                    _ctx0     = ctx0[pipe.new_hyp_messages['secs'][idx][0]][:, None, :]
+                if numpy.sum(n_pipe['action'][idx]) == 0:
+                    temp_sidx = n_pipe['heads'][idx, 0]
+                    _ctx0     = ctx0[n_pipe['seq_info'][idx][0]][:, None, :]
                     _z0       = f_sim_init(_ctx0[:temp_sidx])  # initializer
-                    pipe.new_hyp_messages['states'][idx] = _z0
-                # """
+                    n_pipe['prev_z'][idx] = _z0
 
-            # for commit:
+            # for write:
             elif a == 1:
-                # print mask
-                # update new_hyp_message
-                head_t = pipe.new_hyp_messages['source'][idx]
-                if head_t == -1:  # use generated samples
-                    pipe.add('sample', [wi], idx)
-                    pipe.add('cmask',[mask], idx)
-
-                else:
-                    pipe.add('sample', [trg[head_t] if head_t < len(trg) else 0], idx)  # use ground-truth
-                    pipe.new_hyp_messages['source'][idx] += 1
-
-                pipe.add('score',        _score[idx], idx)
-                pipe.add('attentions', [next_a[idx]], idx)
-                pipe.append('forgotten', -1, idx=idx, use_hyp=True)
+                n_pipe['sample'][idx].append(wi)
+                n_pipe['cmask'][idx].append(c_mask)
+                n_pipe['score'][idx].append(_score[idx])
+                n_pipe['attentions'][idx].append(next_a[idx])
+                n_pipe['forgotten'][idx].append(-1)
 
                 if full_attention:
-                    pipe.add('old_attend', [next_fa[idx]], idx)
+                    n_pipe['old_attend'][idx].append(next_fa[idx])
 
-                # *** special care
-                pipe.new_hyp_messages['states'][idx]    = next_z[idx]
-                pipe.new_hyp_messages['heads'][idx, 1] += 1
-                pipe.new_hyp_messages['coverage'][idx]  = cov[idx]
+                n_pipe['prev_z'][idx]    = next_z[idx]  # update the decoder's hidden states
+                n_pipe['heads'][idx, 1] += 1
+                n_pipe['coverage'][idx]  = cov[idx]
 
             # for forget:
             elif a == 2:
-                # move the forget head.
                 if forget_left:
-                    _idx = pipe.new_hyp_messages['heads'][idx, 2]
-                    if pipe.new_hyp_messages['heads'][idx, 2] < pipe.new_hyp_messages['heads'][idx, 0]:
-                        pipe.new_hyp_messages['mask'][_idx, idx] = 0
-                        pipe.new_hyp_messages['heads'][idx, 2] += 1
-                    pipe.append('forgotten', _idx, idx=idx, use_hyp=True)
+                    _idx = n_pipe['heads'][idx, 2]
+                    if n_pipe['heads'][idx, 2] < n_pipe['heads'][idx, 0]:
+                        n_pipe['mask'][_idx, idx] = 0
+                        n_pipe['heads'][idx, 2] += 1
+                    n_pipe['forgotten'][idx].append(_idx)
                 else:
-                    pipe.new_hyp_messages['mask'][cid[idx], idx] = 0
-                    pipe.new_hyp_messages['heads'][idx, 2] = cid[idx]
-                    pipe.append('forgotten', cid[idx], idx=idx, use_hyp=True)
-
+                    n_pipe['mask'][cid[idx], idx] = 0
+                    n_pipe['heads'][idx, 2] = cid[idx]
+                    n_pipe['forgotten'][idx].append(cid[idx])
             else:
                 raise NotImplementedError
 
-        # check the correctness, or given a very negative reward
-        # print pipe.new_hyp_messages['heads'][:, 0], pipe.new_hyp_messages['secs']
+        # ------------------------------------------------------------------
+        # Check the correctness!
+        # ------------------------------------------------------------------
         for idx in xrange(live_k):
-            if pipe.new_hyp_messages['heads'][idx, 0] >= pipe.new_hyp_messages['secs'][idx][1]:  # the read head already reached the end.
-                pipe.new_hyp_messages['secs'][idx][2] = -1
+            if n_pipe['heads'][idx, 0] >= n_pipe['seq_info'][idx][1]:
+                # the read head already reached the end.
+                n_pipe['seq_info'][idx][2] = -1
 
+        # ------------------------------------------------------------------
+        # Collect the trajectories
+        # ------------------------------------------------------------------
         #  kill the completed samples, so I need to build new hyp-messages
-        pipe.clean_hyp()
+        h_pipe = OrderedDict()
 
         for key in ['sample', 'score', 'heads', 'mask',
-                    'states', 'coverage', 'forgotten',
-                    'action', 'obs', 'ctx', 'secs',
+                    'prev_z', 'coverage', 'forgotten',
+                    'action', 'obs', 'ctx', 'seq_info',
                     'attentions', 'hidden', 'old_attend',
-                    'source', 'cmask']:
-            pipe.init_hyp(key)
+                    'cmask']:
+            h_pipe[key] = []
 
-        for idx in xrange(len(pipe.new_hyp_messages['sample'])):
+        for idx in xrange(len(n_pipe['sample'])):
 
-            if (len(pipe.new_hyp_messages['sample'][idx]) > 0) and \
-                  ((pipe.new_hyp_messages['sample'][idx][-1] == 0)         # translate over
-                   or (pipe.new_hyp_messages['heads'][idx][1] >= maxlen)   # exceed the maximum length
+            if (len(n_pipe['sample'][idx]) > 0) and \
+                  ((n_pipe['sample'][idx][-1] == 0)         # translate over
+                   or (n_pipe['heads'][idx][1] >= maxlen)   # exceed the maximum length
                    or (step > (1.5 * maxlen))):
-                # or (pipe.new_hyp_messages['secs'][idx][2]==-1)):        # get into something wrong
-                for key in ['sample', 'score', 'action', 'obs', 'attentions',
-                            'old_attend', 'coverage', 'source', 'forgotten', 'cmask']:
-                    pipe.append_new(key, idx, hyper=False)
 
-                pipe.messages['secs'].append(pipe.new_hyp_messages['secs'][idx])
-
+                for key in ['sample', 'score', 'action', 'obs',
+                            'attentions', 'old_attend', 'coverage',
+                            'forgotten', 'cmask', 'seq_info']:
+                    pipe[key].append(n_pipe[key][idx])
                 live_k -= 1
 
             else:
 
-                for key in ['sample', 'score', 'heads', 'states', 'action',
+                for key in ['sample', 'score', 'heads',
+                            'prev_z', 'action',
                             'obs', 'attentions', 'hidden',
-                            'old_attend', 'coverage', 'source', 'forgotten', 'cmask']:
-                    pipe.append_new(key, idx, hyper=True)
+                            'old_attend', 'coverage',
+                            'forgotten', 'cmask', 'seq_info']:
+                    h_pipe[key].append(n_pipe[key][idx])
 
-                # *** special care ***
-                pipe.hyp_messages['secs'].append(pipe.new_hyp_messages['secs'][idx])
-                pipe.hyp_messages['mask'].append(pipe.new_hyp_messages['mask'][:, idx])
-                pipe.hyp_messages['ctx'].append(pipe.new_hyp_messages['ctx'][:, idx])
+                h_pipe['mask'].append(n_pipe['mask'][:, idx])
+                h_pipe['ctx'].append(n_pipe['ctx'][:, idx])
 
         # make it numpy array
-        for key in ['heads', 'score', 'coverage', 'mask', 'ctx', 'states', 'hidden']:
-            pipe.asarray(key, True)
+        for key in ['heads', 'score', 'coverage',
+                    'mask', 'ctx', 'states', 'hidden']:
+            h_pipe[key] = numpy.asarray(h_pipe)
+        h_pipe['mask'] = h_pipe['mask'].T
 
-        pipe.hyp_messages['mask'] = pipe.hyp_messages['mask'].T
+        if h_pipe['ctx'].ndim == 3:
+            h_pipe['ctx']  = h_pipe['ctx'].transpose(1, 0, 2)
+        elif h_pipe['ctx'].ndim == 2:
+            h_pipe['ctx']  = h_pipe['ctx'][:, None, :]
 
-        if pipe.hyp_messages['ctx'].ndim == 3:
-            pipe.hyp_messages['ctx']  = pipe.hyp_messages['ctx'].transpose(1, 0, 2)
-        elif pipe.hyp_messages['ctx'].ndim == 2:
-            pipe.hyp_messages['ctx']  = pipe.hyp_messages['ctx'][:, None, :]
-
-        prev_z    = pipe.hyp_messages['states']
-        prev_hid  = pipe.hyp_messages['hidden']
-        mask      = pipe.hyp_messages['mask']
-        ctx       = pipe.hyp_messages['ctx']
-
-        prev_w    = numpy.array([w[-1] if len(w) > 0
-                                 else -1 for w in pipe.hyp_messages['sample']],
-                                dtype='int64')
+        h_pipe['prev_hid'] = h_pipe['hidden']
+        h_pipe['prev_w']   = numpy.array([w[-1] if len(w) > 0
+                                          else -1 for w in h_pipe['sample']],
+                                          dtype='int64')
 
     # =======================================================================
     # Collecting Rewards.
@@ -499,7 +396,7 @@ def simultaneous_decoding(funcs,
     SWord = []
 
     for k in xrange(live_all):
-        sp, sc, act, sec_info = [pipe.messages[key][k] for key in ['sample', 'score', 'action', 'secs']]
+        sp, sc, act, sec_info = [pipe[key][k] for key in ['sample', 'score', 'action', 'seq_info']]
         reference   = [_bpe2words(_seqs2words([trgs[sec_info[0]]], t_idict))[0].split()]
         y           = numpy.asarray(sp,  dtype='int64')[:, None]
         y_mask      = numpy.ones_like(y, dtype='float32')
@@ -514,10 +411,13 @@ def simultaneous_decoding(funcs,
         Words      += [words]
         SWord      += [srcs[sec_info[0]]]
 
-        # -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
+        # ----------------------------------------------------------------
         # reward configs
-        keys = {"steps": steps, "y":y, "y_mask": y_mask, "x_mask": x_mask,
-                "act": act, "src_max": src_max, "ctx0": ctx0, "sidx": sidx,
+        # ----------------------------------------------------------------
+        keys = {"steps": steps,
+                "y": y, "y_mask": y_mask, "x_mask": x_mask,
+                "act": act, "src_max": src_max,
+                "ctx0": ctx0, "sidx": sidx,
                 "f_cost": f_cost, "alpha": 0.5,
                 "sample": decoded,
                 "reference": reference,
@@ -538,37 +438,22 @@ def simultaneous_decoding(funcs,
         R     += [Rk]
         track += [(quality, delay, reward)]
 
-    pipe.messages['R']     = R
-    pipe.messages['track'] = track
-    pipe.messages['Ref']   = Ref
-    pipe.messages['Sys']   = Sys
+    pipe['R']     = R
+    pipe['track'] = track
+    pipe['Ref']   = Ref
+    pipe['Sys']   = Sys
 
-    # --------------------------------------------------- #
-    # add to global lists.
-    pipe_t       = pipe.split()
-
-    # --------------------------------------------------- #
-    # collect information
-    keywords     = ['sample', 'action', 'obs', 'forgotten', 'secs',
-                    'attentions', 'old_attend', 'score', 'track',
-                    'R', 'Ref', 'Sys', 'cmask']
-    for k in keywords:
-        if k not in Statistcs:
-            Statistcs[k]  = pipe.messages[k]
-        else:
-            Statistcs[k] += pipe.messages[k]
-
-    Statistcs['Words'] = Words
-    Statistcs['SWord'] = SWord
+    pipe['Words'] = Words
+    pipe['SWord'] = SWord
 
     # If not train, End here
     if not train:
-        return Statistcs
+        return pipe
 
-    # print len(Statistcs['cmask'])
-    # print len(Statistcs['cmask'][0])
-    # print Statistcs['cmask'][0][0].shape
-    # sys.exit(1)
+    print len(pipe['cmask'])
+    print len(pipe['cmask'][0])
+    print pipe['cmask'][0][0].shape
+    sys.exit(1)
 
     # ================================================================= #
     # Policy Gradient over Trajectories for the Agent

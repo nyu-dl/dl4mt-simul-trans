@@ -380,8 +380,7 @@ def simultaneous_decoding(funcs,
 
         h_pipe['prev_hid'] = h_pipe['hidden']
         h_pipe['prev_w']   = numpy.array([w[-1] if len(w) > 0
-                                          else -1 for w in h_pipe['sample']],
-                                          dtype='int64')
+                                          else -1 for w in h_pipe['sample']], dtype='int64')
 
     # =======================================================================
     # Collecting Rewards.
@@ -430,7 +429,7 @@ def simultaneous_decoding(funcs,
 
         ret = return_reward(**keys)
         Rk, quality, delay, instant_reward = ret
-        reward = numpy.mean(instant_reward) # the terminal reward
+        reward = numpy.mean(instant_reward)  # the terminal reward
 
         if steps > max_steps:
             max_steps = steps
@@ -453,20 +452,19 @@ def simultaneous_decoding(funcs,
     # ================================================================= #
     # Policy Gradient over Trajectories for the Agent
     # ================================================================= #
-    p_obs, p_mask   = _padding(pipe['obs'],
-                               shape=(max_steps, n_samples * n_sentences, _policy.n_in),
-                               return_mask=True, sidx=sidx)
-    p_r             = _padding(pipe['R'],
-                               shape=(max_steps, n_samples * n_sentences))
-    p_act           = _padding(pipe['action'],
-                               shape=(max_steps, n_samples * n_sentences), dtype='int64')
+    p_obs, p_mask = _padding(pipe['obs'],
+                             shape=(max_steps, n_samples * n_sentences, _policy.n_in),
+                             return_mask=True, sidx=sidx)
+    p_r           = _padding(pipe['R'],
+                             shape=(max_steps, n_samples * n_sentences))
+    p_act         = _padding(pipe['action'],
+                             shape=(max_steps, n_samples * n_sentences),
+                             dtype='int64')
 
     # learning
     info    = _policy.get_learner()([p_obs, p_mask], p_act, p_r)
     p_adv   = info['advantages']
 
-    print p_adv.shape
-    import sys; sys.exit(-123)
     # ================================================================ #
     # Policy Gradient for the underlying NMT model
     # ================================================================ #
@@ -474,6 +472,8 @@ def simultaneous_decoding(funcs,
         fx      = numpy.tile(x, [1, n_samples])
         fx_mask = numpy.tile(x_mask, [1, n_samples])
 
+        print fx.shape
+        import sys; sys.exit(123)
         pass
 
 

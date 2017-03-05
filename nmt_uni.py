@@ -46,7 +46,6 @@ def init_params(options):
                                                   nin=options['dim_word'],
                                                   dim=options['dim'])
 
-
     ctxdim = options['dim'] if not options.get('birnn', False) else 2 * options['dim']
 
     # init_state, init_cell
@@ -72,9 +71,6 @@ def init_params(options):
                                 nin=options['dim_word'],
                                 nout=options['n_words'])
     return params
-
-
-
 
 
 # build a training model: uni-directional encoding
@@ -240,7 +236,6 @@ def build_simultaneous_model(tparams, options, fullmodel=True, rl=True):
     f_init      = theano.function([x, x_mask], [ctx, init_state])
     print 'encoder done.'
 
-
     # ------------------- DECODER ------------------------------------------ #
 
     c_mask      = tensor.tensor3('c_mask', dtype='float32') # seq_t x seq_s x batches
@@ -264,7 +259,6 @@ def build_simultaneous_model(tparams, options, fullmodel=True, rl=True):
                           sequences=[emb, y_mask, c_mask],
                           outputs_info=[init_state, None, None],
                           non_sequences=[ctx])
-
 
     # hidden states of the decoder gru
     proj_h = proj[0]

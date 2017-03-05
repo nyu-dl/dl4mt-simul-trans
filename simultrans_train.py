@@ -134,7 +134,6 @@ def run_simultrans(model,
     else:
         funcs = [f_sim_ctx, f_sim_init, f_sim_next, f_cost]
 
-
     def _translate(src, trg, train=False, samples=config['sample'], greedy=False):
         ret = simultaneous_decoding(
             funcs,
@@ -153,9 +152,7 @@ def run_simultrans(model,
             train=train,
             use_forget=config['forget'],
             use_newinput=config['pre'],
-            use_coverage=config['coverage'],
-            on_groundtruth = 0)
-
+            use_coverage=config['coverage'])
         return ret
 
 

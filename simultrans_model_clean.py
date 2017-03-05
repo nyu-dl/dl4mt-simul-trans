@@ -486,45 +486,31 @@ def simultaneous_decoding(funcs,
     p_act         = _padding(pipe['action'],
                              shape=(max_steps, n_samples * n_sentences), dtype='int64')
 
-    p_y, p_y_mask = _padding(pipe['sample'],
-                             shape=(max_w_steps, n_samples * n_sentences),
-                             return_mask=True)
-    p_x           = numpy.asarray(pipe['source']).T
-    p_i_mask      = numpy.asarray(pipe['i_mask']).T
-    p_c_mask      = _padding(pipe['cmask'],
-                             shape=(max_w_steps, n_samples * n_sentences, p_x.shape[0]))
-
     # learning
     info    = _policy.get_learner()([p_obs, p_mask], p_act, p_r)
-    p_adv   = info['advantages']
-    print p_act.shape,
-    print p_adv.shape,
-    print p_x.shape,
-    print p_i_mask.shape,
-    print p_y.shape,
-    print p_y_mask.shape,
-    print p_c_mask.shape
 
-    print p_act[:, 0]
-
-    new_adv = [p_adv[p_act[:, s] == 1, s] for s in range(p_adv.shape[1])]
-    new_adv = _padding(new_adv, shape=(max_w_steps, n_samples * n_sentences))
-    print new_adv.shape
-    print new_adv[:, 0]
-
-    import sys;
-    sys.exit(123)
     # ================================================================ #
     # Policy Gradient for the underlying NMT model
     # ================================================================ #
+
     if reward_config['finetune']:
-        fx      = numpy.tile(x, [1, n_samples])
-        fx_mask = numpy.tile(x_mask, [1, n_samples])
+        p_y, p_y_mask = _padding(pipe['sample'],
+                                 shape=(max_w_steps, n_samples * n_sentences),
+                                 return_mask=True)
+        p_x = numpy.asarray(pipe['source']).T
+        p_i_mask = numpy.asarray(pipe['i_mask']).T
+        p_c_mask = _padding(pipe['cmask'],
+                            shape=(max_w_steps, n_samples * n_sentences, p_x.shape[0]))
+        p_adv = info['advantages']
+        new_adv = [p_adv[p_act[:, s] == 1, s] for s in range(p_adv.shape[1])]
+        new_adv = _padding(new_adv, shape=(max_w_steps, n_samples * n_sentences))
 
+        a_cost, cost = ff_cost(p_x, p_i_mask, p_y, p_y_mask, p_c_mask, new_adv)
+        print a_cost
+        print cost
+        ff_update(2e-5)
 
-
-        print fx.shape
-
+        import sys; sys.exit(1234)
         pass
 
 

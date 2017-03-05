@@ -15,6 +15,7 @@ E    = numpy.e
 A    = 0.2
 B    = 1
 
+
 class Controller(object):
 
     def __init__(self, trng,
@@ -74,7 +75,6 @@ class Controller(object):
         # if self.n_out == 3:
         #    params[_p('policy_net_out', 'b')][-1]  = -2
 
-
         # for the baseline network.
         params_b = OrderedDict()
 
@@ -128,10 +128,8 @@ class Controller(object):
         for p in params:
             print p, params[p].shape
 
-
     def build_batchnorm(self, observation, mask=None):
         raise NotImplementedError
-
 
     def build_sampler(self, options):
 
@@ -178,13 +176,11 @@ class Controller(object):
             action0       = self.trng.normal(size=mean.shape, dtype='float32')
             action        = action0 * tensor.exp(log_std) + mean
 
-
             print 'build action sampling function [Gaussian]'
             self.f_action = theano.function(act_inps, [action, mean, log_std, hiddens],
                                             on_unused_input='ignore')  # action/dist/hiddens
         else:
             raise NotImplementedError
-
 
     def build_discriminator(self, options):
         # ==================================================================================== #
@@ -199,7 +195,6 @@ class Controller(object):
             actions       = tensor.tensor3('actions', dtype='float32')
         else:
             raise NotImplementedError
-
 
         if not self.recurrent:
             hiddens   = get_layer('ff')[1](self.tparams, observations,
@@ -403,14 +398,13 @@ class Controller(object):
         self.f_update = f_update
         print 'done'
 
-
     def run_reinforce(self, act_inputs, actions, reward, update=True, lr=0.0002):
 
         # sub baseline
         inps_adv      = act_inputs + [reward]
         L, advantages = self.f_adv(*inps_adv)
-
         inps_reinfoce = act_inputs + [actions, advantages]
+
         if self.type == 'gaussian':
             J, H, m, s    = self.f_cost(*inps_reinfoce)
             info = {'J': J, 'G_norm': H, 'B_loss': L, 'Adv': advantages.mean(), 'm': m, 's': s}
@@ -418,13 +412,13 @@ class Controller(object):
             J, H = self.f_cost(*inps_reinfoce)
             info = {'J': J, 'B_loss': L, 'Adv': advantages.mean()}
 
+        info['advantages'] = advantages
 
         if update:  # update the parameters
             self.f_update_b(lr)
             self.f_update(lr)
 
         return info
-
 
     # ==================================================================================== #
     # Trust Region Policy Optimization

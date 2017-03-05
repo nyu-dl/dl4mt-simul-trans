@@ -450,28 +450,23 @@ def simultaneous_decoding(funcs,
     if not train:
         return pipe
 
-    print len(pipe['cmask'])
-    print len(pipe['cmask'][0])
-    print pipe['cmask'][0][0].shape
-    sys.exit(1)
-
     # ================================================================= #
     # Policy Gradient over Trajectories for the Agent
     # ================================================================= #
-    # print Act_masks
-    # p rint Actions
-
-    p_obs, p_mask   = _padding(Statistcs['obs'],
+    p_obs, p_mask   = _padding(pipe['obs'],
                                shape=(max_steps, n_samples * n_sentences, _policy.n_in),
                                return_mask=True, sidx=sidx)
-    p_r             = _padding(Statistcs['R'],
+    p_r             = _padding(pipe['R'],
                                shape=(max_steps, n_samples * n_sentences))
-    p_act           = _padding(Statistcs['action'],
+    p_act           = _padding(pipe['action'],
                                shape=(max_steps, n_samples * n_sentences), dtype='int64')
 
     # learning
     info    = _policy.get_learner()([p_obs, p_mask], p_act, p_r)
+    p_adv   = info['advantages']
 
+    print p_adv.shape
+    import sys; sys.exit(-123)
     # ================================================================ #
     # Policy Gradient for the underlying NMT model
     # ================================================================ #

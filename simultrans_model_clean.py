@@ -175,10 +175,9 @@ def simultaneous_decoding(funcs,
                           use_newinput=False,
                           full_attention=False,
                           use_coverage=False,
-                          on_groundtruth=0,
                           src_eos=True):
 
-    # unzip functions
+    # --- unzip functions
     f_sim_ctx     = funcs[0]
     f_sim_init    = funcs[1]
     f_sim_next    = funcs[2]
@@ -189,6 +188,7 @@ def simultaneous_decoding(funcs,
         ff_cost   = funcs[5]
         ff_update = funcs[6]
 
+    # Collect information
     Statistcs     = OrderedDict()
 
     n_sentences   = len(srcs)
@@ -198,44 +198,33 @@ def simultaneous_decoding(funcs,
     _probs        = numpy.zeros((n_out, ))
     _total        = 0
 
-    # check
-    # if reward_config['greedy']:
-    #     print 'use greedy policy'
-
-    # ============================================================================ #
-    # Generating Trajectories based on Current Policy
-    # ============================================================================ #
-
-    live_k    = (n_samples + on_groundtruth) * n_sentences
+    live_k    = n_samples * n_sentences
     live_all  = live_k
 
-    # Critical! add the <eos>
+    # ============================================================================ #
+    # Initialization Before Generating Trajectories
+    # ============================================================================ #
+
+    # Critical! add the <eos> ------------------
     srcs = [src + [0] for src in srcs]
 
     src_max   = max([len(src) for src in srcs])
     if src_max < sidx:
         sidx  = src_max
 
-    x, ctx0, z0, secs0 = [], [], [], []
+    x, ctx0, z0, seq_info0 = [], [], [], []
 
     # data initialization
     for id, (src, trg) in enumerate(zip(srcs, trgs)):
 
-        _x    = numpy.array(src, dtype='int64')[:, None]
+        _x          = numpy.array(src, dtype='int64')[:, None]
         _, _ctx0, _ = f_sim_ctx(_x)
-        _z0   = f_sim_init(_ctx0[:sidx, :])
-        # _z0   = f_sim_init(_ctx0)
-
-        # print 'state', init
-        # print 'state', _z0
-        # print 'ctx0', _ctx0, _ctx0.shape
-        # print 'ctx_mean', m
+        _z0         = f_sim_init(_ctx0[:sidx, :])
 
         x.append(_x[:, 0])
         ctx0.append(_ctx0[:, 0, :])
         z0.append(_z0.flatten())
-        secs0.append([id, len(src), 0])  # word id / source length / correctness
-
+        seq_info0.append([id, len(src), 0])  # word id / source length / correctness
 
     # pad the results
     x, x_mask = _padding(x, (src_max, n_sentences), dtype='int64', return_mask=True)
@@ -250,58 +239,65 @@ def simultaneous_decoding(funcs,
 
     # if we have multiple samples for one input sentence
     mask      = numpy.tile(mask, [1, live_k])
-    z0        = numpy.tile(z0,   [live_k / n_sentences, 1])
+    z         = numpy.tile(z0,   [live_k / n_sentences, 1])
     ctx       = numpy.tile(ctx,  [1, live_k / n_sentences, 1])
-    hidden0   = numpy.tile(hidden0, [live_k, 1])
+    hidden    = numpy.tile(hidden0, [live_k, 1])
 
-    secs      = []
-    for _ in xrange(live_k / n_sentences):
-        secs += copy.deepcopy(secs0)
+    seq_info  = []
+    for _ in range(live_k / n_sentences):
+        seq_info += copy.deepcopy(seq_info0)
 
-
-    #============================================================================ #
+    # =========================================================================== #
     # PIPE for message passing
     # =========================================================================== #
-    pipe      = PIPE(['sample', 'score', 'action', 'obs', 'attentions',
-                      'old_attend', 'coverage', 'source', 'forgotten', 'secs', 'cmask'])
+    pipe   = OrderedDict()
+    h_pipe = OrderedDict()
+    n_pipe = OrderedDict()
 
-    # Build for the temporal results: hyp-message
+    # initialize pipes
+    for key in ['sample', 'score', 'action',
+                'obs', 'attentions', 'old_attend',
+                'coverage', 'forgotten',
+                'seq_info', 'cmask']:
+        pipe[key] = []
+
+    # initialize h-pipe
     for key in ['sample', 'obs', 'attentions', 'hidden', 'old_attend', 'cmask']:
-        pipe.init_hyp(key, live_k)
+        h_pipe[key] = [[] for _ in range(live_k)]
 
-    # special care
-    pipe.hyp_messages['source']    = [-1 for _ in xrange(n_samples)] + [0 for _ in xrange(on_groundtruth)]
-    pipe.hyp_messages['source']    = [si for si in pipe.hyp_messages['source'] for _ in xrange(n_sentences)]
+    h_pipe['score']     = numpy.zeros(live_k).astype('float32')
+    h_pipe['action']    = [[0]  * sidx for _ in xrange(live_k)]
+    h_pipe['forgotten'] = [[-1] * sidx for _ in xrange(live_k)]
+    h_pipe['coverage']  = numpy.zeros((live_k, ctx.shape[0])).astype('float32')
 
-    pipe.hyp_messages['score']     = numpy.zeros(live_k).astype('float32')
-    pipe.hyp_messages['action']    = [[0] * sidx for _ in xrange(live_k)]
-    pipe.hyp_messages['forgotten'] = [[-1] * sidx for _ in xrange(live_k)]
-    pipe.hyp_messages['coverage']  = numpy.zeros((live_k, ctx.shape[0])).astype('float32')
+    h_pipe['mask']      = mask
+    h_pipe['ctx']       = ctx
+    h_pipe['seq_info']  = seq_info
+    h_pipe['heads']     = numpy.asarray([[sidx, 0, 0]] * live_k)  # W C F
 
-    pipe.hyp_messages['mask']      = mask
-    pipe.hyp_messages['ctx']       = ctx
-    pipe.hyp_messages['secs']      = secs
-    pipe.hyp_messages['states']    = z0
-    pipe.hyp_messages['heads']     = numpy.asarray([[sidx, 0, 0]] * live_k)  # W C F
+    h_pipe['prev_w']    = -1 * numpy.ones((live_k, )).astype('int64')
+    h_pipe['prev_z']    = z
+    h_pipe['prev_hid']  = hidden
 
     # these are inputs that needs to be updated
-    prev_w     = -1 * numpy.ones((live_k, )).astype('int64')
-    prev_z     = z0
-    prev_hid   = hidden0
     step       = 0
 
+    #
     # =======================================================================
     # ROLLOUT: Iteration until all the samples over.
     # Action space:
     # 0: Read,
     # 1: Commit,
-    # 2: Forget,
+    # 2: Forget (optional)
     # =======================================================================
     while live_k > 0:
         step += 1
 
-        inps         = [prev_w, ctx, mask, prev_z]
-        # print mask
+        # ------------------------------------------------------------------
+        # Run one-step translation
+        # ------------------------------------------------------------------
+
+        inps  = [h_pipe[v] for v in ['prev_w', 'ctx', 'mask', 'prev_z']]
         next_p, _, next_z, next_o, next_a, cur_emb = f_sim_next(*inps)
 
         if full_attention:
@@ -311,62 +307,54 @@ def simultaneous_decoding(funcs,
             _, _, _, _, next_fa, _ = f_sim_next(*inps2)
 
         # obtain the candidate and the accumulated score.
-        _cand          = next_p.argmax(axis=-1)  # live_k
+        _cand          = next_p.argmax(axis=-1)  # live_k, candidate words
         _score         = next_p[range(live_k), _cand]
 
         # new place-holders for temporal results: new-hyp-message
-        pipe.clean_new_hyp()
+        n_pipe = OrderedDict()
 
+        for key in ['sample', 'score', 'heads', 'attentions',
+                    'old_attend', 'coverage', 'mask', 'ctx',
+                    'seq_info', 'states', 'cmask']:
 
-        for key in ['sample', 'score', 'heads', 'attentions', 'old_attend', 'coverage', 'source',
-                    'mask', 'ctx', 'secs', 'states', 'cmask']:
-            pipe.init_new_hyp(key, use_copy=True)
+            n_pipe[key] = copy.copy(h_pipe[key])
 
         for key in ['action', 'forgotten', 'obs', 'hidden']:
-            pipe.init_new_hyp(key, use_copy=False)
+            n_pipe[key] = []
 
-        cov    = pipe.new_hyp_messages['coverage'] * pipe.new_hyp_messages['mask'].T \
-               + next_a  # clean that has been forgotten
-
-        # current maximum
+        cov    = n_pipe['coverage'] * n_pipe['mask'].T + next_a  # clean that has been forgotten
         cid    = cov.argmax(axis=-1)
 
-
-        # Rollout the action.
-        _actions, _aprop, _hidden, _z = _policy.action(next_o, prev_hid)  # input the current observation
-
-        # print _actions.shape
+        # ------------------------------------------------------------------
+        # Run one-step agent action.
+        # ------------------------------------------------------------------
+        _actions, _aprop, _hidden, _z = _policy.action(next_o, h_pipe['prev_hid'])  # input the current observation
         if reward_config['greedy']:
             _actions = _aprop.argmax(-1)
-            # print _actions.shape
 
         _total += _aprop.shape[0]
         _probs += _aprop.sum(axis=0)
 
-        # check each candidate
+        # ------------------------------------------------------------------
+        # Evaluate the action
+        # ------------------------------------------------------------------
         for idx, wi in enumerate(_cand):
 
-            # collect the action
-            a    = _actions[idx]
+            # action
+            a      = _actions[idx]
+            c_mask = n_pipe['mask'][idx]
 
-            # *****  Evaluate the Action !!! *****
-            # for wait:
             if reward_config.get('upper', False):
-                # a = 1 - pipe.hyp_messages['action'][idx][-1]
                 a = 0  # testing upper bound: only wait
 
-            if reward_config['greedy'] and (pipe.new_hyp_messages['heads'][idx, 0]
-                                         >= pipe.new_hyp_messages['secs'][idx][1]):
+            if reward_config['greedy'] and (n_pipe['heads'][idx, 0] >= n_pipe['seq_info'][idx][1]):
                 a = 1  # in greedy mode. must end.
 
-            if reward_config['greedy'] and (pipe.new_hyp_messages['heads'][idx, 2]
-                                         >= pipe.new_hyp_messages['heads'][idx, 0]):
+            if reward_config['greedy'] and (n_pipe['heads'][idx, 2] >= n_pipe['heads'][idx, 0]):
                 a = 1  # in greedy mode. must end.
 
             # must read the whole sentence
-            #if pipe.new_hyp_messages['heads'][idx, 0] < pipe.new_hyp_messages['secs'][idx][1]:
-            #    if wi == 0: # end before read the last source words --->  wait!!
-            #        a = 0
+            # pass
 
             # message appending
             pipe.append('obs',       next_o[idx],   idx=idx, use_hyp=True)

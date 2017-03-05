@@ -496,7 +496,7 @@ def simultaneous_decoding(funcs,
     if reward_config['finetune']:
         p_y, p_y_mask = _padding(pipe['sample'],
                                  shape=(max_w_steps, n_samples * n_sentences),
-                                 return_mask=True)
+                                 return_mask=True, dtype='int64')
         p_x = numpy.asarray(pipe['source']).T
         p_i_mask = numpy.asarray(pipe['i_mask']).T
         p_c_mask = _padding(pipe['cmask'],

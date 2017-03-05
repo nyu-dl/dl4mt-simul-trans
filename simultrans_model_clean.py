@@ -108,7 +108,7 @@ def simultaneous_decoding(funcs,
 
     n_sentences   = len(srcs)
     n_out         = 3 if use_forget else 2
-    max_steps     = -1
+
 
     _probs        = numpy.zeros((n_out, ))
     _total        = 0
@@ -411,12 +411,17 @@ def simultaneous_decoding(funcs,
     Words = []
     SWord = []
 
+    max_steps   = -1
+    max_w_steps = -1
+
     for k in xrange(live_all):
         sp, sc, act, sec_info = [pipe[key][k] for key in ['sample', 'score', 'action', 'seq_info']]
         reference   = [_bpe2words(_seqs2words([trgs[sec_info[0]]], t_idict))[0].split()]
         y           = numpy.asarray(sp,  dtype='int64')[:, None]
         y_mask      = numpy.ones_like(y, dtype='float32')
+
         steps       = len(act)
+        w_steps     = len(sp)
 
         # turn back to sentence level
         words       = _seqs2words([sp], t_idict)[0]
@@ -452,6 +457,9 @@ def simultaneous_decoding(funcs,
         if steps > max_steps:
             max_steps = steps
 
+        if w_steps > max_w_steps:
+            max_w_steps = w_steps
+
         R     += [Rk]
         track += [(quality, delay, reward)]
 
@@ -476,17 +484,25 @@ def simultaneous_decoding(funcs,
     p_r           = _padding(pipe['R'],
                              shape=(max_steps, n_samples * n_sentences))
     p_act         = _padding(pipe['action'],
-                             shape=(max_steps, n_samples * n_sentences),
-                             dtype='int64')
+                             shape=(max_steps, n_samples * n_sentences), dtype='int64')
+
+    p_y, p_y_mask = _padding(pipe['sample'],
+                             shape=(max_w_steps, n_samples * n_sentences),
+                             return_mask=True)
+    p_x           = numpy.asarray(pipe['source']).T
+    p_i_mask      = numpy.asarray(pipe['i_mask']).T
+    p_c_mask      = _padding(pipe['cmask'],
+                             shape=(max_w_steps, n_samples * n_sentences, p_x.shape[0]))
 
     # learning
     info    = _policy.get_learner()([p_obs, p_mask], p_act, p_r)
     p_adv   = info['advantages']
-    print p_adv.shape
-    print len(pipe['source']),
-    print len(pipe['i_mask']),
-    print len(pipe['sample']),
-    print len(pipe['cmask']),
+    print p_adv.shape,
+    print p_x.shape,
+    print p_i_mask.shape,
+    print p_y.shape,
+    print p_y_mask.shape,
+    print p_c_mask.shape
 
     import sys;
     sys.exit(123)

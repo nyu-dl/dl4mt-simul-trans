@@ -295,7 +295,7 @@ def simultaneous_decoding(funcs,
             elif a == 1:
                 n_pipe['sample'][idx].append(wi)
                 n_pipe['cmask'][idx].append(c_mask)
-                n_pipe['score'][idx].append(_score[idx])
+                n_pipe['score'][idx] += _score[idx]
                 n_pipe['attentions'][idx].append(next_a[idx])
                 n_pipe['forgotten'][idx].append(-1)
 

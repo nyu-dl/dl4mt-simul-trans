@@ -155,7 +155,6 @@ def run_simultrans(model,
             use_coverage=config['coverage'])
         return ret
 
-
     # check the ID:
     policy['base'] = _model
     _policy = Policy(trng, options, policy, config,
@@ -237,10 +236,6 @@ def run_simultrans(model,
                 quality, delay, reward = zip(*statistics['track'])
                 reference += statistics['Ref']
                 system    += statistics['Sys']
-
-                # print ' '.join(reference[-1][0])
-                # print ' '.join(system[-1])
-
 
                 # compute the average consective waiting length
                 def _consective(action):
@@ -326,63 +321,7 @@ def run_simultrans(model,
             continue
 
         srcs, trgs = new_srcs, new_trgs
-        #try:
-        statistics, info, pipe_t = _translate(srcs, trgs, train=True)
-
-        #except Exception:
-        #    print 'translate a empty sentence. bug.'
-        #    continue
-
-
-        # samples, scores, actions, rewards, info, pipe_t = _translate(srcs, trgs, train=True)
-        # print pipe_t
-
-
-        if config['finetune'] != 'nope':
-
-            for idx, act in enumerate(pipe_t['action']):
-                _start = 0
-                _end = 0
-                _mask = [0 for _ in srcs[0]]
-                _cmask = []
-
-                pipe.messages['x'] += srcs
-                pipe.messages['y'] += [pipe_t['sample'][idx]]
-
-                for a in act:
-                    # print _start, _end
-                    if a == 0:
-                        _mask[_start] = 1
-                        _start += 1
-                    elif a == 2:
-                        _mask[_end] = 0
-                        _end += 1
-                    else:
-                        _cmask.append(_mask)
-                # print numpy.asarray(_cmask).shape
-
-                pipe.messages['c_mask'].append(_cmask)
-
-            if it % finetune_freq == (finetune_freq - 1):
-                num = len(pipe.messages['x'])
-                max_x = max([len(v) for v in pipe.messages['x']])
-                max_y = max([len(v) for v in pipe.messages['y']])
-
-                xx, xx_mask = _padding(pipe.messages['x'], shape=(max_x, num), return_mask=True, dtype='int64')
-                yy, yy_mask = _padding(pipe.messages['y'], shape=(max_y, num), return_mask=True, dtype='int64')
-                cc_mask = _padding(pipe.messages['c_mask'], shape=(max_y, num, max_x)).transpose([0, 2, 1])
-
-                # fine-tune the EncDec of translation
-                if config['finetune'] == 'full':
-                    cost = f_fine_cost(xx, xx_mask, yy, yy_mask, cc_mask)
-                elif config['finetune'] == 'decoder':
-                    cost = f_fine_cost(xx, xx_mask, yy, yy_mask, cc_mask)
-                else:
-                    raise NotImplementedError
-
-                print '\nIter={} || cost = {}'.format(it, cost[0])
-                f_fine_update(0.00001)
-                pipe.reset()
+        statistics, info = _translate(srcs, trgs, train=True)
 
         if it % sample_freq == 0:
 
@@ -428,6 +367,9 @@ def run_simultrans(model,
         if remote:
             logs = {'R': info['R'], 'Q': info['Q'],
                     'D': info['D'], 'P': float(info['P'])}
+            if 'a_cost' in info:
+                logs['A'] = info['a_cost']
+
             # print logs
             for w in logs:
                 Log_avg[w] = Log_avg.get(w, 0) + logs[w]

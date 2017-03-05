@@ -505,18 +505,13 @@ def simultaneous_decoding(funcs,
         new_adv = [p_adv[p_act[:, s] == 1, s] for s in range(p_adv.shape[1])]
         new_adv = _padding(new_adv, shape=(max_w_steps, n_samples * n_sentences))
 
-        a_cost, cost = ff_cost(p_x, p_i_mask, p_y, p_y_mask, p_c_mask.transpose(0, 2, 1), new_adv)
-        print a_cost
-        print cost
+        a_cost, _ = ff_cost(p_x, p_i_mask, p_y, p_y_mask, p_c_mask.transpose(0, 2, 1), new_adv)
         ff_update(2e-5)
 
-        import sys; sys.exit(1234)
-        pass
-
-
+        info['a_cost'] = a_cost
 
     # add the reward statistics
-    q, d, r = zip(*Statistcs['track'])
+    q, d, r = zip(*pipe['track'])
     info['Quality']   = numpy.mean(q)
     info['Delay']     = numpy.mean(d)
     info['StartR']    = numpy.mean(r)
@@ -528,7 +523,6 @@ def simultaneous_decoding(funcs,
     if use_forget:
         info['F']   = _probs[2]
 
-
-    return Statistcs, info, pipe_t
+    return pipe, info
 
 

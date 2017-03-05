@@ -85,6 +85,10 @@ def rl_config():
     # under-construction
     config['forget']    = False
 
+    # learning rate
+    config['lr_policy'] = 0.0002
+    config['lr_model']  = 0.00002
+
     # policy parameters
     policy['prop']      = 0.5   # leave it default
     policy['recurrent'] = True  # use a recurrent agent

@@ -106,7 +106,7 @@ def rl_config():
     config['pre']      = False
     config['coverage'] = False
     config['upper']    = False
-    config['finetune'] = 'nope'
+    config['finetune'] = True
     config['full_att'] = False
 
     return config

@@ -28,7 +28,7 @@ class Controller(object):
         self.trng      = trng
         self.options   = options
         self.recurrent = recurrent
-        self.type      = self.policy.get('type', 'categorical')
+        self.type      = options.get('type', 'categorical')
 
         self.n_hidden  = 128
         self.n_in      = n_in
@@ -86,8 +86,8 @@ class Controller(object):
 
         if id is not None:
             print 'reload the saved model: {}'.format(id)
-            params   = load_params(self.WORK + '.policy/{}-{}.current.npz'.format(id, self.policy['base']), params)
-            params_b = load_params(self.WORK + '.policy/{}-{}.current.npz'.format(id, self.policy['base']), params_b)
+            params   = load_params(self.WORK + '.policy/{}-{}.current.npz'.format(id, self.options['base']), params)
+            params_b = load_params(self.WORK + '.policy/{}-{}.current.npz'.format(id, self.options['base']), params_b)
         else:
             id = datetime.datetime.fromtimestamp(time.time()).strftime('%y%m%d-%H%M%S')
             print 'start from a new model: {}'.format(id)

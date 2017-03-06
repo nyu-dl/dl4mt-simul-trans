@@ -57,8 +57,8 @@ def run_simultrans(model,
 
     print 'merge configuration into options'
     for w in config:
-        if (w in options) and (config[w] is not None):
-            options[w] = config[w]
+        # if (w in options) and (config[w] is not None):
+        options[w] = config[w]
 
     print 'load options...'
     for w, p in sorted(options.items(), key=lambda x: x[0]):
@@ -145,7 +145,6 @@ def run_simultrans(model,
     # Main Loop: Run
     # ================================================================================= #
     print 'Start Simultaneous Translator...'
-    probar = Progbar(train_num / config['batchsize'], with_history=False)
     monitor = None
     if remote:
         monitor = Monitor(root='http://localhost:9000')
@@ -293,7 +292,7 @@ def run_simultrans(model,
             c  = 0
             for j in xrange(len(samples)):
 
-                if statistics['secs'][j][0] == 0:
+                if statistics['seq_info'][j][0] == 0:
                     if c < (config['sample']/2.):
                         c += 1
                         continue
@@ -308,9 +307,9 @@ def run_simultrans(model,
                     print 'delay:',   statistics['track'][j][1]
                     print 'reward:',  statistics['track'][j][2]
                     break
+        values = [(w, float(info[w])) for w in info if w != 'advantages']
+        print ' , '.join(['{}={:.3f}'.format(k, f) for k, f in values])
 
-        values = [(w, info[w]) for w in info]
-        probar.update(it + 1, values=values)
 
         # NaN detector
         for w in info:

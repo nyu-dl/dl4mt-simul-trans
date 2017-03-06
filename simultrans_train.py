@@ -10,6 +10,7 @@ from bleu import *
 from nmt_uni import *
 from policy import Controller as Policy
 from utils import Progbar, Monitor
+from data_iterator import check_length, iterate
 
 from simultrans_model_clean import simultaneous_decoding
 from simultrans_model_clean import _seqs2words, _bpe2words, _padding
@@ -19,11 +20,11 @@ import time
 numpy.random.seed(19920206)
 timer = time.time
 
+
 # run training function:: >>>
 def run_simultrans(model,
                    options_file=None,
                    config=None,
-                   policy=None,
                    id=None,
                    remote=False):
 
@@ -35,7 +36,6 @@ def run_simultrans(model,
         p = WORK + p
         if not os.path.exists(p):
             os.mkdir(p)
-
 
     if id is not None:
         fcon = WORK + '.config/{}.conf'.format(id)
@@ -60,31 +60,12 @@ def run_simultrans(model,
         if (w in options) and (config[w] is not None):
             options[w] = config[w]
 
-
     print 'load options...'
     for w, p in sorted(options.items(), key=lambda x: x[0]):
         print '{}: {}'.format(w, p)
 
     # load detail settings from option file:
     dictionary, dictionary_target = options['dictionaries']
-
-    def _iter(fname):
-        with open(fname, 'r') as f:
-            for line in f:
-                words = line.strip().split()
-                x = map(lambda w: word_dict[w] if w in word_dict else 1, words)
-                x = map(lambda ii: ii if ii < options['n_words'] else 1, x)
-                x += [0]
-                yield x
-
-    def _check_length(fname):
-        f = open(fname, 'r')
-        count = 0
-        for _ in f:
-            count += 1
-        f.close()
-
-        return count
 
     # load source dictionary and invert
     with open(dictionary, 'rb') as f:
@@ -104,7 +85,6 @@ def run_simultrans(model,
     word_idict_trg[0] = '<eos>'
     word_idict_trg[1] = 'UNK'
 
-    ## use additional input for the policy network
     options['pre'] = config['pre']
 
     # ========================================================================= #
@@ -127,44 +107,22 @@ def run_simultrans(model,
     f_sim_ctx, f_sim_init, f_sim_next = build_simultaneous_sampler(tparams, options, trng)
 
     # function for finetune the underlying model
-    if config['finetune']:
+    if options['finetune']:
         ff_init, ff_cost, ff_update = build_simultaneous_model(tparams, options, rl=True)
         funcs = [f_sim_ctx, f_sim_init, f_sim_next, f_cost, ff_init, ff_cost, ff_update]
 
     else:
         funcs = [f_sim_ctx, f_sim_init, f_sim_next, f_cost]
 
-    def _translate(src, trg, train=False, samples=config['sample'], greedy=False):
-        ret = simultaneous_decoding(
-            funcs,
-            _policy,
-            src, trg, word_idict_trg,
-            step=config['step'], peek=config['peek'], sidx=config['s0'],
-            n_samples=samples,
-            reward_config={'target': config['target_ap'],
-                            'cw':    config['target_cw'],
-                           'gamma':  config['gamma'],
-                           'Rtype':  config['Rtype'],
-                           'maxsrc': config['maxsrc'],
-                           'greedy': greedy,
-                           'upper':  config['upper'],
-                           'finetune': config['finetune']},
-            train=train,
-            use_forget=config['forget'],
-            use_newinput=config['pre'],
-            use_coverage=config['coverage'])
-        return ret
 
     # check the ID:
-    policy['base'] = _model
-    _policy = Policy(trng, options, policy, config,
-                     n_in=options['readout_dim'] + 1 if config['coverage'] else options['readout_dim'],
-                     n_out=3 if config['forget'] else 2,
-                     recurrent=policy['recurrent'], id=id)
+    options['base'] = _model
+    agent     = Policy(trng, options,
+                       n_in=options['readout_dim'] + 1 if options['coverage'] else options['readout_dim'],
+                       n_out=3 if config['forget'] else 2,
+                       recurrent=options['recurrent'], id=id)
 
     # make the dataset ready for training & validation
-    # train_    = options['datasets'][0]
-    # train_num = _check_length
     trainIter = TextIterator(options['datasets'][0], options['datasets'][1],
                              options['dictionaries'][0], options['dictionaries'][1],
                              n_words_source=options['n_words_src'], n_words_target=options['n_words'],
@@ -180,9 +138,6 @@ def run_simultrans(model,
                              maxlen=1000000)
 
     valid_num = validIter.num
-
-    valid_ = options['valid_datasets'][0]
-    valid_num = _check_length(valid_)
     print 'training set {} lines / validation set {} lines'.format(train_num, valid_num)
     print 'use the reward function {}'.format(chr(config['Rtype'] + 65))
 
@@ -203,7 +158,7 @@ def run_simultrans(model,
     display_freq  = 50
     finetune_freq = 5
 
-    history, last_it = _policy.load()
+    history, last_it = agent.load()
     action_space = ['W', 'C', 'F']
     Log_avg = {}
     time0 = timer()
@@ -211,6 +166,13 @@ def run_simultrans(model,
     pipe = OrderedDict()
     for key in ['x', 'x_mask', 'y', 'y_mask', 'c_mask']:
         pipe[key] = []
+
+    def _translate(src, trg, samples=None, train=False, greedy=False):
+        ret = simultaneous_decoding(
+            funcs, agent, options,
+            src, trg, word_idict_trg,
+            samples, greedy, train)
+        return ret
 
     for it, (srcs, trgs) in enumerate(trainIter):  # only one sentence each iteration
         if it < last_it:  # go over the scanned lines.
@@ -221,9 +183,6 @@ def run_simultrans(model,
         reference = []
         system    = []
 
-        reference2 = []
-        system2    = []
-
         if it % valid_freq == (valid_freq-1):
             print 'start validation'
 
@@ -231,7 +190,7 @@ def run_simultrans(model,
             probar_v = Progbar(valid_num / 64 + 1)
             for ij, (srcs, trgs) in enumerate(validIter):
 
-                statistics = _translate(srcs, trgs, train=False, samples=1, greedy=True)
+                statistics = _translate(srcs, trgs, samples=1, train=False, greedy=True)
 
                 quality, delay, reward = zip(*statistics['track'])
                 reference += statistics['Ref']
@@ -284,7 +243,6 @@ def run_simultrans(model,
                           ('max_len', numpy.mean(maxlen))]
                 probar_v.update(ij + 1, values=values)
 
-
             validIter.reset()
             valid_bleu, valid_delay, valid_wait, valid_wait_gec, valid_mx = [numpy.mean(a) for a in collections]
             print 'Iter = {}: AVG BLEU = {}, DELAY = {}, WAIT(MEAN) = {}, WAIT(MAX) = {}, MaxLen={}'.format(
@@ -302,16 +260,14 @@ def run_simultrans(model,
 
             history += [collections]
 
-
-        if config['upper']:
+        if options['upper']:
             print 'done'
             import sys; sys.exit(-1)
-
 
         # training set sentence tuning
         new_srcs, new_trgs = [], []
         for src, trg in zip(srcs, trgs):
-            if len(src) <= config['s0']:
+            if len(src) <= options['s0']:
                 continue  # ignore when the source sentence is less than sidx. we don't use the policy\
             else:
                 new_srcs += [src]
@@ -325,7 +281,6 @@ def run_simultrans(model,
 
         if it % sample_freq == 0:
 
-            print '\nModel:{} has been trained for {} hours'.format(_policy.id, (timer() - time0) / 3600.)
             print 'source: ', _bpe2words(_seqs2words([srcs[0]], word_idict))[0]
             print 'target: ', _bpe2words(_seqs2words([trgs[0]], word_idict_trg))[0]
 
@@ -343,7 +298,7 @@ def run_simultrans(model,
                         c += 1
                         continue
 
-                    print '---ID: {}'.format(_policy.id)
+                    print '---ID: {}'.format(agent.id)
                     print 'sample: ', samples[j]
                     print 'action: ', ','.join(
                         ['{}'.format(action_space[t])
@@ -357,7 +312,6 @@ def run_simultrans(model,
         values = [(w, info[w]) for w in info]
         probar.update(it + 1, values=values)
 
-
         # NaN detector
         for w in info:
             if numpy.isnan(info[w]) or numpy.isinf(info[w]):
@@ -370,7 +324,7 @@ def run_simultrans(model,
             if 'a_cost' in info:
                 logs['A'] = info['a_cost']
 
-            # print logs
+            print logs
             for w in logs:
                 Log_avg[w] = Log_avg.get(w, 0) + logs[w]
 
@@ -384,17 +338,16 @@ def run_simultrans(model,
         # save the history & model
         history += [info]
         if it % save_freq == 0:
-            _policy.save(history, it)
+            agent.save(history, it)
 
 
 if __name__ == "__main__":
     from config import rl_config
-    policy, config = rl_config()
+    config = rl_config()
 
     run_simultrans(config['model'],
                    options_file=config['option'],
                    config=config,
-                   policy=policy,
                    id=None,
                    remote=False)
 

@@ -78,22 +78,12 @@ def _padding(arrays, shape, dtype='float32', return_mask=False, sidx=0):
 # ==============================================================
 # Simultaneous Translation in Batch-mode
 # ==============================================================
-def simultaneous_decoding(funcs,
-                          _policy,
-                          srcs,     # source sentences
-                          trgs,     # taeget sentences
-                          t_idict = None,
-                          step=1, peek=1, sidx=3,
-                          n_samples=10,
-                          maxlen=120,
-                          reward_config=None,
-                          train=False,
-                          use_forget=False,
-                          forget_left=True,
-                          use_newinput=False,
-                          full_attention=False,
-                          use_coverage=False,
-                          src_eos=True):
+def simultaneous_decoding(funcs, agent, options,
+                          srcs, trgs, t_idict = None,
+                          samples=None,
+                          greedy=False, train=False,
+                          forget_left=True
+                          ):
 
     # --- unzip functions
     f_sim_ctx     = funcs[0]
@@ -101,14 +91,16 @@ def simultaneous_decoding(funcs,
     f_sim_next    = funcs[2]
     f_cost        = funcs[3]
 
-    if reward_config['finetune']:
+    if options['finetune']:
         ff_init   = funcs[4]
         ff_cost   = funcs[5]
         ff_update = funcs[6]
 
     n_sentences   = len(srcs)
-    n_out         = 3 if use_forget else 2
-
+    n_out         = 3 if options['forget'] else 2
+    n_samples     = options['sample'] if not samples else samples
+    sidx          = options['s0']
+    maxlen        = options['rl_maxlen']
 
     _probs        = numpy.zeros((n_out, ))
     _total        = 0
@@ -150,7 +142,7 @@ def simultaneous_decoding(funcs,
     one       = numpy.asarray([1.] * src_max, dtype='float32')[:, None]
 
     # hidden states
-    hidden0   = _policy.init_hidden()
+    hidden0   = agent.init_hidden()
 
     # if we have multiple samples for one input sentence
     mask      = numpy.tile(mask, [1, live_k])
@@ -219,7 +211,7 @@ def simultaneous_decoding(funcs,
         inps  = [h_pipe[v] for v in ['prev_w', 'ctx', 'mask', 'prev_z']]
         next_p, _, next_z, next_o, next_a, cur_emb = f_sim_next(*inps)
 
-        if full_attention:
+        if options['full_att']:
             old_mask = numpy.tile(one,  [1, live_k])
             inps2    = inps
             inps2[2] = old_mask
@@ -247,8 +239,8 @@ def simultaneous_decoding(funcs,
         # ------------------------------------------------------------------
         # Run one-step agent action.
         # ------------------------------------------------------------------
-        _actions, _aprop, _hidden, _z = _policy.action(next_o, h_pipe['prev_hid'])  # input the current observation
-        if reward_config['greedy']:
+        _actions, _aprop, _hidden, _z = agent.action(next_o, h_pipe['prev_hid'])  # input the current observation
+        if greedy:
             _actions = _aprop.argmax(-1)
 
         _total += _aprop.shape[0]
@@ -263,15 +255,11 @@ def simultaneous_decoding(funcs,
             a      = _actions[idx]
             c_mask = n_pipe['mask'][:, idx]
 
-            if reward_config.get('upper', False):
+            if options.get('upper', False):
                 a = 0  # testing upper bound: only wait
-
-            if reward_config['greedy'] and \
-                    (n_pipe['heads'][idx, 0] >= n_pipe['seq_info'][idx][1]):
+            if greedy and (n_pipe['heads'][idx, 0] >= n_pipe['seq_info'][idx][1]):
                 a = 1  # in greedy mode. must end.
-
-            if reward_config['greedy'] and \
-                    (n_pipe['heads'][idx, 2] >= n_pipe['heads'][idx, 0]):
+            if greedy and (n_pipe['heads'][idx, 2] >= n_pipe['heads'][idx, 0]):
                 a = 1  # in greedy mode. must end.
 
             # must read the whole sentence
@@ -307,7 +295,7 @@ def simultaneous_decoding(funcs,
                 n_pipe['attentions'][idx].append(next_a[idx])
                 n_pipe['forgotten'][idx].append(-1)
 
-                if full_attention:
+                if options['full_att']:
                     n_pipe['old_attend'][idx].append(next_fa[idx])
 
                 n_pipe['prev_z'][idx]    = next_z[idx]  # update the decoder's hidden states
@@ -433,7 +421,7 @@ def simultaneous_decoding(funcs,
         SWord      += [srcs[sec_info[0]]]
 
         # ----------------------------------------------------------------
-        # reward configs
+        # reward keys
         # ----------------------------------------------------------------
         keys = {"steps": steps,
                 "y": y, "y_mask": y_mask,
@@ -444,11 +432,13 @@ def simultaneous_decoding(funcs,
                 "sample": decoded,
                 "reference": reference,
                 "words": words,
-                "source_len": sec_info[1]}
+                "source_len": sec_info[1],
 
-        # add additional configs
-        for r in reward_config:
-            keys[r] = reward_config[r]
+                'target': options['target_ap'],
+                'cw': options['target_cw'],
+                'gamma': options['gamma'],
+                'Rtype': options['Rtype'],
+                'maxsrc': options['maxsrc']}
 
         ret = return_reward(**keys)
         Rk, quality, delay, instant_reward = ret
@@ -479,34 +469,35 @@ def simultaneous_decoding(funcs,
     # Policy Gradient over Trajectories for the Agent
     # ================================================================= #
     p_obs, p_mask = _padding(pipe['obs'],
-                             shape=(max_steps, n_samples * n_sentences, _policy.n_in),
+                             shape=(max_steps, live_all, agent.n_in),
                              return_mask=True, sidx=sidx)
     p_r           = _padding(pipe['R'],
-                             shape=(max_steps, n_samples * n_sentences))
+                             shape=(max_steps, live_all))
     p_act         = _padding(pipe['action'],
-                             shape=(max_steps, n_samples * n_sentences), dtype='int64')
+                             shape=(max_steps, live_all), dtype='int64')
 
     # learning
-    info    = _policy.get_learner()([p_obs, p_mask], p_act, p_r)
+    info    = agent.get_learner()([p_obs, p_mask], p_act, p_r, lr=options['lr_policy'])
 
     # ================================================================ #
     # Policy Gradient for the underlying NMT model
     # ================================================================ #
 
-    if reward_config['finetune']:
+    if options['finetune']:
         p_y, p_y_mask = _padding(pipe['sample'],
-                                 shape=(max_w_steps, n_samples * n_sentences),
+                                 shape=(max_w_steps, live_all),
                                  return_mask=True, dtype='int64')
         p_x = numpy.asarray(pipe['source']).T
         p_i_mask = numpy.asarray(pipe['i_mask']).T
         p_c_mask = _padding(pipe['cmask'],
-                            shape=(max_w_steps, n_samples * n_sentences, p_x.shape[0]))
+                            shape=(max_w_steps, live_all, p_x.shape[0]))
         p_adv = info['advantages']
         new_adv = [p_adv[p_act[:, s] == 1, s] for s in range(p_adv.shape[1])]
-        new_adv = _padding(new_adv, shape=(max_w_steps, n_samples * n_sentences))
+        new_adv = _padding(new_adv, shape=(max_w_steps, live_all))
 
-        a_cost, _ = ff_cost(p_x, p_i_mask, p_y, p_y_mask, p_c_mask.transpose(0, 2, 1), new_adv)
-        ff_update(2e-5)
+        a_cost, _ = ff_cost(p_x, p_i_mask, p_y, p_y_mask,
+                            p_c_mask.transpose(0, 2, 1), new_adv)
+        ff_update(options['lr_model'])
 
         info['a_cost'] = a_cost
 
@@ -520,7 +511,7 @@ def simultaneous_decoding(funcs,
     info['p(WAIT)']   = _probs[0]
     info['p(COMMIT)'] = _probs[1]
 
-    if use_forget:
+    if options['forget']:
         info['F']   = _probs[2]
 
     return pipe, info

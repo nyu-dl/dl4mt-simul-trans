@@ -180,13 +180,13 @@ def build_model(tparams, options):
 
 
 # build a simultaneous model
-def build_simultaneous_model(tparams, options, fullmodel=True, rl=True):
+def build_simultaneous_model(tparams, options, rl=True):
 
     # ------------------- ENCODER ------------------------------------------ #
 
     opt_ret   = dict()
 
-    # trng      = RandomStreams(1234)
+    trng      = RandomStreams(1234)
     use_noise = theano.shared(numpy.float32(0.))
 
     # description string: #words x #samples
@@ -299,38 +299,23 @@ def build_simultaneous_model(tparams, options, fullmodel=True, rl=True):
     else:
         a_cost = tensor.mean((cost * y_mask).sum(0))
 
-    # gradient clipping
-    def _clip(grad):
-        clip_c = 1.
-        if clip_c > 0.:
-            g2 = 0.
-            for g in grad:
-                g2 += (g ** 2).sum()
-            new_grads = []
-            for g in grad:
-                new_grads.append(tensor.switch(g2 > (clip_c ** 2), g / tensor.sqrt(g2) * clip_c, g))
-            grad = new_grads
-        return grad
-
     lr    = tensor.scalar(name='lr')
     if not rl:
         print 'build MLE optimizer for the whole NMT model:'
-        a_grad = _clip(theano.grad(a_cost, wrt=itemlist(tparams)))
+        a_grad = grad_clip(theano.grad(a_cost, wrt=itemlist(tparams)))
         inps   = [x, x_mask, y, y_mask, c_mask]
         outps  = [a_cost, cost]
         f_cost, f_update = adam(lr, tparams, a_grad, inps, outps)
 
     else:
         print 'build REINFORCE optimizer for the whole NMT model:'
-        a_grad = _clip(theano.grad(a_cost, wrt=itemlist(tparams)))
+        a_grad = grad_clip(theano.grad(a_cost, wrt=itemlist(tparams)))
         inps   = [x, x_mask, y, y_mask, c_mask, advantages]
         outps  = [a_cost, cost]
         f_cost, f_update = adam(lr, tparams, a_grad, inps, outps)
 
     print 'done.'
     return f_init, f_cost, f_update
-
-
 
 
 # build a sampler for NMT

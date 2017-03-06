@@ -8,9 +8,21 @@ profile = False
 # optimizers
 # name(hyperp, tparams, grads, inputs (list), cost) = f_grad_shared, f_update
 
-"""
-First order optimizer
-"""
+
+# gradient clipping
+def grad_clip(grad):
+    clip_c = 1.
+    if clip_c > 0.:
+        g2 = 0.
+        for g in grad:
+            g2 += (g ** 2).sum()
+        new_grads = []
+        for g in grad:
+            new_grads.append(tensor.switch(g2 > (clip_c ** 2), g / tensor.sqrt(g2) * clip_c, g))
+        grad = new_grads
+    return grad
+
+
 def adam(lr, tparams, grads, inp, cost):
     gshared = [theano.shared(p.get_value() * 0.,
                              name='%s_grad' % k)
@@ -132,15 +144,3 @@ def sgd(lr, tparams, grads, x, mask, y, cost):
     print 'build optimizer with SGD'
     return f_grad_shared, f_update
 
-
-"""
-Beyond first-order optimizer
-"""
-def conjugate(lr, tparams, grads, inps, cost):
-    """
-    Performs constrained optimization via line search.
-    The search direction is computed using a conjugate gradient algorithm,
-    which gives x = A^{-1}g, where A is a second order approximation of the constraint and g is the gradient
-    of the loss function.
-    """
-    pass

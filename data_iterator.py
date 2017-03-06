@@ -146,3 +146,22 @@ class TextIterator:
             raise StopIteration
 
         return source, target
+
+
+def iterate(fname, word_dict, n_words):
+    with open(fname, 'r') as f:
+        for line in f:
+            words = line.strip().split()
+            x = map(lambda w: word_dict[w] if w in word_dict else 1, words)
+            x = map(lambda ii: ii if ii < n_words else 1, x)
+            x += [0]
+            yield x
+
+
+def check_length(fname):
+    f = open(fname, 'r')
+    count = 0
+    for _ in f:
+        count += 1
+    f.close()
+    return count

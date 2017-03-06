@@ -55,7 +55,6 @@ def rl_config():
     """Configuration for training the agent using REINFORCE algorithm."""
 
     config = OrderedDict()  # general configuration
-    policy = OrderedDict()  # configuration for policy
 
     # work-space
     config['workspace'] = model_home
@@ -79,6 +78,7 @@ def rl_config():
     # critical training parameters.
     config['sample']    = 10
     config['batchsize'] = 10
+    config['rl_maxlen'] = 120
     config['target_ap'] = 1.0   # 0.75  # target delay if using AP as reward.
     config['target_cw'] = 8     # if cw > 0 use cw mode
 
@@ -90,11 +90,11 @@ def rl_config():
     config['lr_model']  = 0.00002
 
     # policy parameters
-    policy['prop']      = 0.5   # leave it default
-    policy['recurrent'] = True  # use a recurrent agent
-    policy['layernorm'] = False # layer normalalization for the GRU agent.
-    policy['updater']   = 'REINFORCE'  # 'TRPO' not work well.
-    policy['act_mask']  = True  # leave it default
+    config['prop']      = 0.5   # leave it default
+    config['recurrent'] = True  # use a recurrent agent
+    config['layernorm'] = False # layer normalalization for the GRU agent.
+    config['updater']   = 'REINFORCE'  # 'TRPO' not work well.
+    config['act_mask']  = True  # leave it default
 
     # old model parameters (maybe useless, leave them default)
     config['step']     = 1
@@ -107,8 +107,9 @@ def rl_config():
     config['coverage'] = False
     config['upper']    = False
     config['finetune'] = 'nope'
+    config['full_att'] = False
 
-    return policy, config
+    return config
 
 
 

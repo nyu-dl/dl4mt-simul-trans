@@ -20,16 +20,13 @@ class Controller(object):
 
     def __init__(self, trng,
                  options,
-                 policy,
-                 config,
                  n_in=None, n_out=None,
                  recurrent=False, id=None):
 
-        self.WORK      = config['workspace']
+        self.WORK      = options['workspace']
 
         self.trng      = trng
         self.options   = options
-        self.policy    = policy
         self.recurrent = recurrent
         self.type      = self.policy.get('type', 'categorical')
 
@@ -37,7 +34,7 @@ class Controller(object):
         self.n_in      = n_in
         self.n_out     = n_out
 
-        if self.policy.get('layernorm', True):
+        if self.options.get('layernorm', True):
             self.rec = 'lngru'
         else:
             self.rec = 'gru'
@@ -95,23 +92,8 @@ class Controller(object):
             id = datetime.datetime.fromtimestamp(time.time()).strftime('%y%m%d-%H%M%S')
             print 'start from a new model: {}'.format(id)
 
-            with open(self.WORK + '.config/conf.{}.txt'.format(id), 'w') as f:
-                f.write('[config]\n')
-
-                for c in config:
-                    f.write('{}: {}\n'.format(c, config[c]))
-                f.write('\n')
-
-                f.write('[policy]\n')
-
-                for c in policy:
-                    f.write('{}: {}\n'.format(c, policy[c]))
-
-            # pkl.dump([policy, config], open('.config/{}.conf'.format(id), 'w'))
-            print 'save the config file'
-
         self.id = id
-        self.model = self.WORK + '.policy/{}-{}'.format(id, self.policy['base'])
+        self.model = self.WORK + '.policy/{}-{}'.format(id, self.options['base'])
 
         # theano shared params
         tparams        = init_tparams(params)
@@ -146,15 +128,14 @@ class Controller(object):
                                          activ='tanh')
         else:
             hiddens = get_layer(self.rec)[1](self.tparams, observation,
-                                          options, prefix='policy_net_in', mask=None,
-                                          one_step=True, _init_state=prev_hidden)[0]
+                                             options, prefix='policy_net_in', mask=None,
+                                             one_step=True, _init_state=prev_hidden)[0]
 
         act_inps = [observation, prev_hidden]
         if self.type == 'categorical':
             act_prob  = get_layer('ff')[1](self.tparams, hiddens, options,
-                                         prefix='policy_net_out',
-                                         activ='softmax'
-                                        )   # batch_size x n_out
+                                           prefix='policy_net_out',
+                                           activ='softmax')   # batch_size x n_out
             act_prob2 = tensor.clip(act_prob, TINY, 1 - TINY)
 
             # compiling the sampling function for action
@@ -230,7 +211,6 @@ class Controller(object):
         else:
             raise NotImplementedError
 
-
         # ==================================================================================== #
         # Build Baseline Network (Input-dependent Value Function) & Advantages
         # ==================================================================================== #
@@ -251,11 +231,11 @@ class Controller(object):
         # ==================================================================================== #
         # Build Policy Gradient (here we provide two options)
         # ==================================================================================== #
-        if self.policy['updater'] == 'REINFORCE':
+        if self.options['updater'] == 'REINFORCE':
             print 'build RENIFROCE.'
             self.build_reinforce(act_inputs, act_probs, actions, advantages)
 
-        elif self.policy['updater'] == 'TRPO':
+        elif self.options['updater'] == 'TRPO':
             print 'build TRPO'
             self.build_trpo(act_inputs, act_probs, actions, advantages)
         else:
@@ -272,7 +252,6 @@ class Controller(object):
     def action(self, states, prevhidden):
         return self.f_action(states, prevhidden)
 
-
     def init_hidden(self, n_samples=1):
         return numpy.zeros((n_samples, self.n_hidden), dtype='float32')
 
@@ -280,11 +259,10 @@ class Controller(object):
         states0 = numpy.zeros((n_samples, self.n_in), dtype='float32')
         return self.f_action(states0, self.init_hidden(n_samples))
 
-
     def get_learner(self):
-        if self.policy['updater'] == 'REINFORCE':
+        if self.options['updater'] == 'REINFORCE':
             return self.run_reinforce
-        elif self.policy['updater'] == 'TRPO':
+        elif self.options['updater'] == 'TRPO':
             return self.run_trpo
         else:
             raise NotImplementedError
@@ -294,7 +272,6 @@ class Controller(object):
         p1 = (prob0 + TINY) / (prob1 + TINY)
         # p2 = (1 - prob0 + TINY) / (1 - prob1 + TINY)
         return tensor.sum(prob0 * tensor.log(p1), axis=-1)
-
 
     @staticmethod
     def _grab_prob(probs, X):
@@ -343,7 +320,6 @@ class Controller(object):
 
         return advantages
 
-
     # ===================================================================
     # Policy Grident: REINFORCE with Adam
     # ===================================================================
@@ -371,18 +347,7 @@ class Controller(object):
 
         H     = tensor.sum(mask * negEntropy, axis=0).mean() * 0.01  # entropy penalty
         J     = tensor.sum(mask * -logLikelihood * advantages, axis=0).mean() + H
-        dJ    = tensor.grad(J, wrt=itemlist(self.tparams))
-
-        # clip the policy gradient to 1 (to avoid gradient exploding)
-        clip_c = 1.
-        if clip_c > 0.:
-            g2 = 0.
-            for g in dJ:
-                g2 += (g ** 2).sum()
-            new_grads = []
-            for g in dJ:
-                new_grads.append(tensor.switch(g2 > (clip_c ** 2), g / tensor.sqrt(g2) * clip_c, g))
-            dJ = new_grads
+        dJ    = grad_clip(tensor.grad(J, wrt=itemlist(self.tparams)))
 
         print 'build REINFORCE optimizer'
         lr    = tensor.scalar(name='lr')
@@ -585,7 +550,6 @@ class Controller(object):
         if verbose: print fmtstr % (i + 1, rdotr, numpy.linalg.norm(x))
         return x
 
-
     # ====================================================================== #
     # Save & Load
     # ====================================================================== #
@@ -605,9 +569,6 @@ class Controller(object):
                     it=it,
                     **_params)
 
-
-
-
     def load(self):
         if os.path.exists(self.model):
             print 'loading from the existing model (current)'
@@ -616,9 +577,9 @@ class Controller(object):
             history = rmodel['history']
             it = rmodel['it']
 
-            self.params = load_params(rmodel, self.params)
-            self.params_b = load_params(rmodel, self.params_b)
-            self.tparams = init_tparams(self.params)
+            self.params    = load_params(rmodel, self.params)
+            self.params_b  = load_params(rmodel, self.params_b)
+            self.tparams   = init_tparams(self.params)
             self.tparams_b = init_tparams(self.params_b)
 
             print 'the dataset need to go over {} lines'.format(it)

@@ -134,7 +134,7 @@ def run_simultrans(model,
     validIter = TextIterator(options['valid_datasets'][0], options['valid_datasets'][1],
                              options['dictionaries'][0], options['dictionaries'][1],
                              n_words_source=options['n_words_src'], n_words_target=options['n_words'],
-                             batch_size=64, cache=10,
+                             batch_size=30, cache=10,
                              maxlen=1000000)
 
     valid_num = validIter.num
@@ -166,11 +166,19 @@ def run_simultrans(model,
     for key in ['x', 'x_mask', 'y', 'y_mask', 'c_mask']:
         pipe[key] = []
 
-    def _translate(src, trg, samples=None, train=False, greedy=False):
-        ret = simultaneous_decoding(
-            funcs, agent, options,
-            src, trg, word_idict_trg,
-            samples, greedy, train)
+    def _translate(src, trg, samples=None, train=False, greedy=False, show=False):
+        time0 = time.time()
+        ret   = simultaneous_decoding(
+                funcs, agent, options,
+                src, trg, word_idict_trg,
+                samples, greedy, train)
+
+        if show:
+            info   = ret[1]
+            values = [(w, float(info[w])) for w in info if w != 'advantages']
+            print ' , '.join(['{}={:.3f}'.format(k, f) for k, f in values]),
+            print '...{}s'.format(time.time() - time0)
+
         return ret
 
     for it, (srcs, trgs) in enumerate(trainIter):  # only one sentence each iteration
@@ -182,11 +190,11 @@ def run_simultrans(model,
         reference = []
         system    = []
 
-        if it % valid_freq == (valid_freq-1):
+        if it % valid_freq == 0:
             print 'start validation'
 
             collections = [[], [], [], [], []]
-            probar_v = Progbar(valid_num / 64 + 1)
+            probar_v = Progbar(valid_num / 30 + 1)
             for ij, (srcs, trgs) in enumerate(validIter):
 
                 statistics = _translate(srcs, trgs, samples=1, train=False, greedy=True)
@@ -258,6 +266,7 @@ def run_simultrans(model,
                     fout.write('{}\n'.format(' '.join(ref[0])))
 
             history += [collections]
+            print 'done'
 
         if options['upper']:
             print 'done'
@@ -276,10 +285,9 @@ def run_simultrans(model,
             continue
 
         srcs, trgs = new_srcs, new_trgs
-        statistics, info = _translate(srcs, trgs, train=True)
+        statistics, info = _translate(srcs, trgs, train=True, show=True)
 
         if it % sample_freq == 0:
-
 
             # obtain the translation results
             samples = _bpe2words(
@@ -302,20 +310,14 @@ def run_simultrans(model,
                         c += 1
                         continue
 
-                    print '---ID: {}'.format(agent.id)
+                    print '--Iter: {}'.format(it)
                     print 'source: ', sources[j]
                     print 'sample: ', samples[j]
-                    print 'action: ', ','.join(
-                        ['{}'.format(action_space[t])
-                         for t in statistics['action'][j]])
-
                     print 'target: ', targets[j]
                     print 'quality:', statistics['track'][j][0]
                     print 'delay:',   statistics['track'][j][1]
                     print 'reward:',  statistics['track'][j][2]
                     break
-        values = [(w, float(info[w])) for w in info if w != 'advantages']
-        print ' , '.join(['{}={:.3f}'.format(k, f) for k, f in values])
 
 
         # NaN detector

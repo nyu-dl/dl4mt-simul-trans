@@ -5,6 +5,7 @@ Simultaneous Machine Translateion
 
 from nmt_uni import *
 from reward  import return_reward
+from termcolor import colored as clr
 
 import time
 import sys
@@ -13,22 +14,48 @@ timer = time.time
 
 
 # utility functions
-def _seqs2words(caps, idict):
+def _seqs2words(caps, idict, actions=None, target=0):
     capsw = []
-    for cc in caps:
-        ww = []
+    colors = ['cyan', 'green', 'yellow', 'red', 'magenta']
+
+    for kk, cc in enumerate(caps):
+        ww   = []
+        pos  = 0
+        iss  = 0
+        flag = True
+
         for w in cc:
             if w == 0:
                 break
-            ww.append(idict[w])
+
+            word = idict[w]
+            if actions is not None:
+                while True:
+                    if actions[kk][iss] == target:
+                        word = clr(word, colors[pos % len(colors)])
+                        iss  += 1
+                        flag  = True
+                        break
+                    else:
+                        if flag:
+                            pos  += 1
+                            flag = False
+                        iss += 1
+                    if iss >= len(actions[kk]):
+                        break
+            ww.append(word)
+
         capsw.append(' '.join(ww))
     return capsw
 
 
 def _bpe2words(capsw):
-    capw = []
+    capw   = []
     for cc in capsw:
-        capw += [cc.replace('@@ ', '')]
+        words = cc.replace('@@ ', '')
+
+
+        capw += [words]
     return capw
 
 
@@ -82,8 +109,7 @@ def simultaneous_decoding(funcs, agent, options,
                           srcs, trgs, t_idict = None,
                           samples=None,
                           greedy=False, train=False,
-                          forget_left=True
-                          ):
+                          forget_left=True):
 
     # --- unzip functions
     f_sim_ctx     = funcs[0]
@@ -105,8 +131,8 @@ def simultaneous_decoding(funcs, agent, options,
     _probs        = numpy.zeros((n_out, ))
     _total        = 0
 
-    live_k    = n_samples * n_sentences
-    live_all  = live_k
+    live_k        = n_samples * n_sentences
+    live_all      = live_k
 
     # ============================================================================ #
     # Initialization Before Generating Trajectories
@@ -419,6 +445,7 @@ def simultaneous_decoding(funcs, agent, options,
         Sys        += [decoded]
         Words      += [words]
         SWord      += [srcs[sec_info[0]]]
+        TWord      += [trgs[sec_info[0]]]
 
         # ----------------------------------------------------------------
         # reward keys
@@ -460,6 +487,7 @@ def simultaneous_decoding(funcs, agent, options,
 
     pipe['Words'] = Words
     pipe['SWord'] = SWord
+    pipe['TWord'] = TWord
 
     # If not train, End here
     if not train:

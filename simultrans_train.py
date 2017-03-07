@@ -267,7 +267,7 @@ def run_simultrans(model,
         new_srcs, new_trgs = [], []
         for src, trg in zip(srcs, trgs):
             if len(src) <= options['s0']:
-                continue  # ignore when the source sentence is less than sidx. we don't use the policy\
+                continue  # ignore when the source sentence is less than sidx.
             else:
                 new_srcs += [src]
                 new_trgs += [trg]
@@ -280,11 +280,16 @@ def run_simultrans(model,
 
         if it % sample_freq == 0:
 
-            print 'source: ', _bpe2words(_seqs2words([srcs[0]], word_idict))[0]
-            print 'target: ', _bpe2words(_seqs2words([trgs[0]], word_idict_trg))[0]
 
             # obtain the translation results
-            samples = _bpe2words(_seqs2words(statistics['sample'], word_idict_trg))
+            samples = _bpe2words(
+                    _seqs2words(statistics['sample'], word_idict_trg,
+                                statistics['action'], 1))
+            sources =  _bpe2words(
+                    _seqs2words(statistics['SWord'], word_idict,
+                                statistics['action'], 0))
+            targets =  _bpe2words(
+                    _seqs2words(statistics['TWord'], word_idict))
 
             # obtain the delay (normalized)
             # delays = _action2delay(srcs[0], statistics['action'])
@@ -298,11 +303,13 @@ def run_simultrans(model,
                         continue
 
                     print '---ID: {}'.format(agent.id)
+                    print 'source: ', sources[j]
                     print 'sample: ', samples[j]
                     print 'action: ', ','.join(
                         ['{}'.format(action_space[t])
                          for t in statistics['action'][j]])
 
+                    print 'target: ', targets[j]
                     print 'quality:', statistics['track'][j][0]
                     print 'delay:',   statistics['track'][j][1]
                     print 'reward:',  statistics['track'][j][2]

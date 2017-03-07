@@ -3,8 +3,8 @@ Configuration for Simultaneous Neural Machine Translation
 """
 from collections import OrderedDict
 
-data_home  = '/mnt/scratch/un16/'
-model_home = '/mnt/scratch/simul/'
+data_home  = '/home/thoma/scratch/un16/'
+model_home = '/home/thoma/scratch/simul/'
 
 def pretrain_config():
     """Configuration for pretraining underlining NMT model."""

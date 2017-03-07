@@ -76,11 +76,11 @@ def rl_config():
     config['option'] = model_home + '.pretrained/model_un16_bpe2k_uni_en-zh.npz.pkl'
 
     # critical training parameters.
-    config['sample']    = 10
-    config['batchsize'] = 10
-    config['rl_maxlen'] = 120
+    config['sample']    = 100
+    config['batchsize'] = 1
+    config['rl_maxlen'] = 100
     config['target_ap'] = 1.0   # 0.75  # target delay if using AP as reward.
-    config['target_cw'] = 8     # if cw > 0 use cw mode
+    config['target_cw'] = 5     # if cw > 0 use cw mode
 
     # under-construction
     config['forget']    = False

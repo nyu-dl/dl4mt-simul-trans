@@ -345,7 +345,7 @@ class Controller(object):
 
         # tensor.log(act_probs) * actions + tensor.log(1 - act_probs) * (1 - actions)
 
-        H     = tensor.sum(mask * negEntropy, axis=0).mean() * 0.01  # entropy penalty
+        H     = tensor.sum(mask * negEntropy, axis=0).mean() * 0.1  # entropy penalty
         J     = tensor.sum(mask * -logLikelihood * advantages, axis=0).mean() + H
         dJ    = grad_clip(tensor.grad(J, wrt=itemlist(self.tparams)))
 
@@ -375,7 +375,7 @@ class Controller(object):
             info = {'J': J, 'G_norm': H, 'B_loss': L, 'Adv': advantages.mean(), 'm': m, 's': s}
         else:
             J, H = self.f_cost(*inps_reinfoce)
-            info = {'J': J, 'B_loss': L, 'Adv': advantages.mean()}
+            info = {'J': J, 'Entropy': H, 'B_loss': L, 'Adv': advantages.mean()}
 
         info['advantages'] = advantages
 

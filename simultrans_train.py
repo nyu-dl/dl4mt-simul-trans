@@ -289,7 +289,7 @@ def run_simultrans(model,
                     _seqs2words(statistics['SWord'], word_idict,
                                 statistics['action'], 0))
             targets =  _bpe2words(
-                    _seqs2words(statistics['TWord'], word_idict))
+                    _seqs2words(statistics['TWord'], word_idict_trg))
 
             # obtain the delay (normalized)
             # delays = _action2delay(srcs[0], statistics['action'])
@@ -319,9 +319,9 @@ def run_simultrans(model,
 
 
         # NaN detector
-        for w in info:
-            if numpy.isnan(info[w]) or numpy.isinf(info[w]):
-                raise RuntimeError, 'NaN/INF is detected!! {} : ID={}'.format(w, id)
+        #for w in info:
+        #    if numpy.isnan(info[w]) or numpy.isinf(info[w]):
+        #        raise RuntimeError, 'NaN/INF is detected!! {} : ID={}'.format(w, id)
 
         # remote display
         if remote:

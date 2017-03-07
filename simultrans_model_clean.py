@@ -22,7 +22,7 @@ def _seqs2words(caps, idict, actions=None, target=0):
         ww   = []
         pos  = 0
         iss  = 0
-        flag = True
+        flag = False
 
         for w in cc:
             if w == 0:
@@ -31,18 +31,21 @@ def _seqs2words(caps, idict, actions=None, target=0):
             word = idict[w]
             if actions is not None:
                 while True:
+                    if iss == len(actions[kk]):
+                        word = clr(word, 'white')
+                        break
+
                     if actions[kk][iss] == target:
                         word = clr(word, colors[pos % len(colors)])
-                        iss  += 1
-                        flag  = True
+                        iss += 1
+                        flag = True
                         break
                     else:
                         if flag:
                             pos  += 1
                             flag = False
                         iss += 1
-                    if iss >= len(actions[kk]):
-                        break
+
             ww.append(word)
 
         capsw.append(' '.join(ww))
@@ -235,7 +238,7 @@ def simultaneous_decoding(funcs, agent, options,
         # ------------------------------------------------------------------
 
         inps  = [h_pipe[v] for v in ['prev_w', 'ctx', 'mask', 'prev_z']]
-        next_p, _, next_z, next_o, next_a, cur_emb = f_sim_next(*inps)
+        next_p, next_w, next_z, next_o, next_a, cur_emb = f_sim_next(*inps)
 
         if options['full_att']:
             old_mask = numpy.tile(one,  [1, live_k])
@@ -244,8 +247,11 @@ def simultaneous_decoding(funcs, agent, options,
             _, _, _, _, next_fa, _ = f_sim_next(*inps2)
 
         # obtain the candidate and the accumulated score.
-        _cand          = next_p.argmax(axis=-1)  # live_k, candidate words
-        _score         = next_p[range(live_k), _cand]
+        if greedy:
+            _cand    = next_p.argmax(axis=-1)  # live_k, candidate words
+        else:
+            _cand    = next_w  # sampling
+        _score       = next_p[range(live_k), _cand]
 
         # new place-holders for temporal results: new-hyp-message
         n_pipe = OrderedDict()
@@ -311,7 +317,7 @@ def simultaneous_decoding(funcs, agent, options,
                     _ctx0     = ctx0[n_pipe['seq_info'][idx][0]][:, None, :]
                     _z0       = f_sim_init(_ctx0[:temp_sidx])  # initializer
                     n_pipe['prev_z'][idx] = _z0
-                    n_pipe['i_mask'][temp_sidx, idx] = 1
+                    n_pipe['i_mask'][temp_sidx-1, idx] = 1
 
             # for write:
             elif a == 1:
@@ -424,6 +430,7 @@ def simultaneous_decoding(funcs, agent, options,
 
     Words = []
     SWord = []
+    TWord = []
 
     max_steps   = -1
     max_w_steps = -1

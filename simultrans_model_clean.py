@@ -247,10 +247,11 @@ def simultaneous_decoding(funcs, agent, options,
             _, _, _, _, next_fa, _ = f_sim_next(*inps2)
 
         # obtain the candidate and the accumulated score.
-        if greedy:
-            _cand    = next_p.argmax(axis=-1)  # live_k, candidate words
-        else:
+        if (not greedy) and (options['finetune']):
             _cand    = next_w  # sampling
+        else:
+            _cand    = next_p.argmax(axis=-1)  # live_k, candidate words
+
         _score       = next_p[range(live_k), _cand]
 
         # new place-holders for temporal results: new-hyp-message
@@ -272,6 +273,7 @@ def simultaneous_decoding(funcs, agent, options,
         # Run one-step agent action.
         # ------------------------------------------------------------------
         _actions, _aprop, _hidden, _z = agent.action(next_o, h_pipe['prev_hid'])  # input the current observation
+
         if greedy:
             _actions = _aprop.argmax(-1)
 

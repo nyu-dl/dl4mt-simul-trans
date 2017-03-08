@@ -345,7 +345,7 @@ class Controller(object):
 
         # tensor.log(act_probs) * actions + tensor.log(1 - act_probs) * (1 - actions)
 
-        H     = tensor.sum(mask * negEntropy, axis=0).mean() * 0.1  # entropy penalty
+        H     = tensor.sum(mask * negEntropy, axis=0).mean() * 0.001  # penalty
         J     = tensor.sum(mask * -logLikelihood * advantages, axis=0).mean() + H
         dJ    = grad_clip(tensor.grad(J, wrt=itemlist(self.tparams)))
 

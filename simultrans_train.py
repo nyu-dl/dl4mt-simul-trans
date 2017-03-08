@@ -134,7 +134,7 @@ def run_simultrans(model,
     validIter = TextIterator(options['valid_datasets'][0], options['valid_datasets'][1],
                              options['dictionaries'][0], options['dictionaries'][1],
                              n_words_source=options['n_words_src'], n_words_target=options['n_words'],
-                             batch_size=30, cache=10,
+                             batch_size=20, cache=10,
                              maxlen=1000000)
 
     valid_num = validIter.num
@@ -194,7 +194,7 @@ def run_simultrans(model,
             print 'start validation'
 
             collections = [[], [], [], [], []]
-            probar_v = Progbar(valid_num / 30 + 1)
+            probar_v = Progbar(valid_num / 20 + 1)
             for ij, (srcs, trgs) in enumerate(validIter):
 
                 statistics = _translate(srcs, trgs, samples=1, train=False, greedy=True)

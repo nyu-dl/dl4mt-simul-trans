@@ -166,10 +166,17 @@ def run_simultrans(model,
     for key in ['x', 'x_mask', 'y', 'y_mask', 'c_mask']:
         pipe[key] = []
 
-    def _translate(src, trg, samples=None, train=False, greedy=False, show=False):
+    def _translate(src, trg, samples=None, train=False,
+                   greedy=False, show=False, full=False):
         time0 = time.time()
+        if full:
+            options1 = copy.copy(options)
+            options1['upper'] = True
+        else:
+            options1 = options
+
         ret   = simultaneous_decoding(
-                funcs, agent, options,
+                funcs, agent, options1,
                 src, trg, word_idict_trg,
                 samples, greedy, train)
 
@@ -190,7 +197,7 @@ def run_simultrans(model,
         reference = []
         system    = []
 
-        if it % valid_freq == 0:
+        if it % valid_freq == (valid_freq-1):
             print 'start validation'
 
             collections = [[], [], [], [], []]
@@ -202,6 +209,7 @@ def run_simultrans(model,
                 quality, delay, reward = zip(*statistics['track'])
                 reference += statistics['Ref']
                 system    += statistics['Sys']
+
 
                 # compute the average consective waiting length
                 def _consective(action):
@@ -288,6 +296,10 @@ def run_simultrans(model,
         statistics, info = _translate(srcs, trgs, train=True, show=True)
 
         if it % sample_freq == 0:
+
+            print statistics['attentions'][0]
+            print statistics['attentions'][0].shape
+            import sys; sys.exit(-1)
 
             # obtain the translation results
             samples = _bpe2words(

@@ -441,6 +441,7 @@ def build_partial(tparams, options, trng):
 
     return f_partial
 
+
 # ----------------------------------------------------------------------- #
 # Simultaneous NMT
 def build_simultaneous_sampler(tparams, options, trng):
@@ -464,8 +465,6 @@ def build_simultaneous_sampler(tparams, options, trng):
         embr  = embr.reshape([n_timesteps, n_samples, options['dim_word']])
         projr = get_layer(options['encoder'])[1](tparams, embr, options,
                                                  prefix='encoder_r')
-
-        ## concatenate forward and backward rnn hidden states
         ctx = concatenate([proj[0], projr[0][::-1]], axis=proj[0].ndim-1)
 
     else:
@@ -811,9 +810,9 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True):
 
     return numpy.array(probs)
 
-#-----------------------------------------------------------------------------#
-# Batch preparation
 
+# -----------------------------------------------------------------------------#
+# Batch preparation
 def prepare_data(seqs_x,
                  seqs_y,
                  maxlen=None,
@@ -1083,7 +1082,6 @@ def train(dim_word     = 100,  # word vector dimensionality
                                 uidx=uidx, **unzip(tparams))
                     print 'Done'
 
-
             # generate some samples with the model and display them
             if numpy.mod(uidx, sampleFreq) == 0:
                 # FIXME: random selection?
@@ -1117,6 +1115,7 @@ def train(dim_word     = 100,  # word vector dimensionality
                     print ' '.join(ss).replace('@@ ', '')
                     print 'Sample ', jj, ': ',
                     tt = []
+
                     score = score / numpy.array([len(s) for s in sample])
                     ss = sample[score.argmin()]
                     for vv in ss:

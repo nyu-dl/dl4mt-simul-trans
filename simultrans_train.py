@@ -297,10 +297,6 @@ def run_simultrans(model,
 
         if it % sample_freq == 0:
 
-            print statistics['attentions'][0]
-            print statistics['attentions'][0].shape
-            import sys; sys.exit(-1)
-
             # obtain the translation results
             samples = _bpe2words(
                     _seqs2words(statistics['sample'], word_idict_trg,

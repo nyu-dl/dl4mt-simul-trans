@@ -3,14 +3,17 @@ Configuration for Simultaneous Neural Machine Translation
 """
 from collections import OrderedDict
 
-#data_home  = '/home/thoma/scratch/un16/'
-#model_home = '/home/thoma/scratch/simul/'
-#data_home  = '/mnt/scratch/un16/'
-#model_home = '/mnt/scratch/simul/'
+# data_home  = '/home/thoma/scratch/un16/'
+# model_home = '/home/thoma/scratch/simul/'
+# data_home  = '/mnt/scratch/un16/'
+# model_home = '/mnt/scratch/simul/'
 
 data_home   = '/misc/kcgscratch1/ChoGroup/thoma_data/simul_trans/un16/'
 model_home  = '/misc/kcgscratch1/ChoGroup/thoma_data/simul_trans/'
+
+
 def pretrain_config():
+
     """Configuration for pretraining underlining NMT model."""
 
     config = dict()
@@ -111,6 +114,7 @@ def rl_config():
     config['coverage'] = False
     config['upper']    = False
     config['finetune'] = True
+    config['train_gt'] = True   # when training with GT, fix the agent??
     config['full_att'] = False
 
     return config

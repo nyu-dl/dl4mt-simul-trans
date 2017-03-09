@@ -1,6 +1,7 @@
 from nmt_uni import train
 from config import pretrain_config
 
+
 def main(job_id, params):
     print 'pretraining settings:'
     for c, v in sorted(params.items(), key=lambda a:a[0]):

@@ -143,27 +143,32 @@ def simultaneous_decoding(funcs, agent, options,
 
     # Critical! add the <eos> ------------------
     srcs = [src + [0] for src in srcs]
+    trgs = [trg + [0] for trg in trgs]
 
     src_max   = max([len(src) for src in srcs])
     if src_max < sidx:
         sidx  = src_max
+    trg_max   = max([len(trg) for trg in trgs])
 
-    x, ctx0, z0, seq_info0 = [], [], [], []
+    x, y, ctx0, z0, seq_info0 = [], [], [], [], []
 
     # data initialization
     for id, (src, trg) in enumerate(zip(srcs, trgs)):
 
         _x          = numpy.array(src, dtype='int64')[:, None]
+        _y          = numpy.array(trg, dtype='int64')[:, None]
         _, _ctx0, _ = f_sim_ctx(_x)
         _z0         = f_sim_init(_ctx0[:sidx, :])
 
         x.append(_x[:, 0])
+        y.append(_y[:, 0])
         ctx0.append(_ctx0[:, 0, :])
         z0.append(_z0.flatten())
         seq_info0.append([id, len(src), 0])  # word id / source length / correctness
 
     # pad the results
     x, x_mask = _padding(x, (src_max, n_sentences), dtype='int64', return_mask=True)
+    y, y_mask = _padding(y, (trg_max, n_sentences), dtype='int64', return_mask=True)
     ctx       = _padding(ctx0, (src_max, n_sentences, ctx0[0].shape[-1]))
     z0        = numpy.asarray(z0)
 
@@ -178,6 +183,7 @@ def simultaneous_decoding(funcs, agent, options,
     z         = numpy.tile(z0,   [n_samples, 1])
     ctx       = numpy.tile(ctx,  [1, n_samples, 1])
     x         = numpy.tile(x,    [1, n_samples])
+    y         = numpy.tile(y,    [1, n_samples])
     hidden    = numpy.tile(hidden0, [live_k, 1])
 
     seq_info  = []
@@ -246,13 +252,18 @@ def simultaneous_decoding(funcs, agent, options,
             inps2[2] = old_mask
             _, _, _, _, next_fa, _ = f_sim_next(*inps2)
 
+        # -------------------------------------------------------------------
         # obtain the candidate and the accumulated score.
         if (not greedy) and (options['finetune']):
-            _cand    = next_w  # sampling
+            if options['train_gt']:  # ground-truth words
+                _cand = [y[h_pipe['heads'][idx, 1], idx] for idx in range(live_k)]
+            else:
+                _cand = next_w       # sampling
         else:
             _cand    = next_p.argmax(axis=-1)  # live_k, candidate words
 
         _score       = next_p[range(live_k), _cand]
+        # -------------------------------------------------------------------
 
         # new place-holders for temporal results: new-hyp-message
         n_pipe = OrderedDict()
@@ -440,8 +451,8 @@ def simultaneous_decoding(funcs, agent, options,
     for k in xrange(live_all):
         sp, sc, act, sec_info = [pipe[key][k] for key in ['sample', 'score', 'action', 'seq_info']]
         reference   = [_bpe2words(_seqs2words([trgs[sec_info[0]]], t_idict))[0].split()]
-        y           = numpy.asarray(sp,  dtype='int64')[:, None]
-        y_mask      = numpy.ones_like(y, dtype='float32')
+        y_sample    = numpy.asarray(sp,  dtype='int64')[:, None]
+        y_sample_mask = numpy.ones_like(y_sample, dtype='float32')
 
         steps       = len(act)
         w_steps     = len(sp)
@@ -460,7 +471,7 @@ def simultaneous_decoding(funcs, agent, options,
         # reward keys
         # ----------------------------------------------------------------
         keys = {"steps": steps,
-                "y": y, "y_mask": y_mask,
+                "y": y_sample, "y_mask": y_sample_mask,
                 "x_mask": x_mask,
                 "act": act, "src_max": src_max,
                 "ctx0": ctx0, "sidx": sidx,
@@ -502,38 +513,45 @@ def simultaneous_decoding(funcs, agent, options,
     if not train:
         return pipe
 
+    info = OrderedDict()
+
     # ================================================================= #
     # Policy Gradient over Trajectories for the Agent
     # ================================================================= #
-    p_obs, p_mask = _padding(pipe['obs'],
-                             shape=(max_steps, live_all, agent.n_in),
-                             return_mask=True, sidx=sidx)
-    p_r           = _padding(pipe['R'],
-                             shape=(max_steps, live_all))
-    p_act         = _padding(pipe['action'],
-                             shape=(max_steps, live_all), dtype='int64')
-
-    # learning
-    info    = agent.get_learner()([p_obs, p_mask], p_act, p_r, lr=options['lr_policy'])
+    if not options['train_gt']:
+        p_obs, p_mask = _padding(pipe['obs'],
+                                 shape=(max_steps, live_all, agent.n_in),
+                                 return_mask=True, sidx=sidx)
+        p_r           = _padding(pipe['R'],
+                                 shape=(max_steps, live_all))
+        p_act         = _padding(pipe['action'],
+                                 shape=(max_steps, live_all), dtype='int64')
+        # learning
+        info_t   = agent.get_learner()([p_obs, p_mask], p_act, p_r, lr=options['lr_policy'])
+        info.update(info_t)
 
     # ================================================================ #
     # Policy Gradient for the underlying NMT model
     # ================================================================ #
-
     if options['finetune']:
         p_y, p_y_mask = _padding(pipe['sample'],
                                  shape=(max_w_steps, live_all),
                                  return_mask=True, dtype='int64')
-        p_x = numpy.asarray(pipe['source']).T
+        p_x      = numpy.asarray(pipe['source']).T
         p_i_mask = numpy.asarray(pipe['i_mask']).T
         p_c_mask = _padding(pipe['cmask'],
                             shape=(max_w_steps, live_all, p_x.shape[0]))
-        p_adv = info['advantages']
-        new_adv = [p_adv[p_act[:, s] == 1, s] for s in range(p_adv.shape[1])]
-        new_adv = _padding(new_adv, shape=(max_w_steps, live_all))
 
-        a_cost, _ = ff_cost(p_x, p_i_mask, p_y, p_y_mask,
-                            p_c_mask.transpose(0, 2, 1), new_adv)
+        p_adv   = info['advantages']
+        new_adv = [p_adv[p_act[:, s] == 1, s] for s in range(p_adv.shape[1])]
+        new_adv, one_reward = _padding(new_adv, shape=(max_w_steps, live_all), return_mask=True)
+
+        if not options['train_gt']:
+            a_cost, _ = ff_cost(p_x, p_i_mask, p_y, p_y_mask,
+                                p_c_mask.transpose(0, 2, 1), new_adv)
+        else:
+            a_cost, _ = ff_cost(p_x, p_i_mask, p_y, p_y_mask,
+                                p_c_mask.transpose(0, 2, 1), one_reward)
         ff_update(options['lr_model'])
 
         info['a_cost'] = a_cost

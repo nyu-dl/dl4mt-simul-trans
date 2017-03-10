@@ -150,7 +150,7 @@ def simultaneous_decoding(funcs, agent, options,
         sidx  = src_max
     trg_max   = max([len(trg) for trg in trgs])
 
-    x, y, ctx0, z0, seq_info0 = [], [], [], [], []
+    x0, y0, ctx0, z0, seq_info0 = [], [], [], [], []
 
     # data initialization
     for id, (src, trg) in enumerate(zip(srcs, trgs)):
@@ -160,15 +160,15 @@ def simultaneous_decoding(funcs, agent, options,
         _, _ctx0, _ = f_sim_ctx(_x)
         _z0         = f_sim_init(_ctx0[:sidx, :])
 
-        x.append(_x[:, 0])
-        y.append(_y[:, 0])
+        x0.append(_x[:, 0])
+        y0.append(_y[:, 0])
         ctx0.append(_ctx0[:, 0, :])
         z0.append(_z0.flatten())
         seq_info0.append([id, len(src), 0])  # word id / source length / correctness
 
     # pad the results
-    x, x_mask = _padding(x, (src_max, n_sentences), dtype='int64', return_mask=True)
-    y, y_mask = _padding(y, (trg_max, n_sentences), dtype='int64', return_mask=True)
+    x0, x_mask = _padding(x0, (src_max, n_sentences), dtype='int64', return_mask=True)
+    y0, y_mask = _padding(y0, (trg_max, n_sentences), dtype='int64', return_mask=True)
     ctx       = _padding(ctx0, (src_max, n_sentences, ctx0[0].shape[-1]))
     z0        = numpy.asarray(z0)
 
@@ -182,8 +182,8 @@ def simultaneous_decoding(funcs, agent, options,
     mask      = numpy.tile(mask, [1, live_k])
     z         = numpy.tile(z0,   [n_samples, 1])
     ctx       = numpy.tile(ctx,  [1, n_samples, 1])
-    x         = numpy.tile(x,    [1, n_samples])
-    y         = numpy.tile(y,    [1, n_samples])
+    x         = numpy.tile(x0,   [1, n_samples])
+    y         = numpy.tile(y0,   [1, n_samples])
     hidden    = numpy.tile(hidden0, [live_k, 1])
 
     seq_info  = []
@@ -256,13 +256,14 @@ def simultaneous_decoding(funcs, agent, options,
         # obtain the candidate and the accumulated score.
         if (not greedy) and (options['finetune']):
             if options['train_gt']:  # ground-truth words
-                _cand = [y[h_pipe['heads'][idx, 1], idx] for idx in range(live_k)]
+                _cand = [y0[h_pipe['heads'][idx, 1], h_pipe['seq_info'][idx][0]]
+                        for idx in range(live_k)]
             else:
                 _cand = next_w       # sampling
         else:
             _cand    = next_p.argmax(axis=-1)  # live_k, candidate words
 
-        _score       = next_p[range(live_k), _cand]
+        _score       = numpy.log(next_p[range(live_k), _cand] + 1e-8)
         # -------------------------------------------------------------------
 
         # new place-holders for temporal results: new-hyp-message
@@ -514,21 +515,27 @@ def simultaneous_decoding(funcs, agent, options,
         return pipe
 
     info = OrderedDict()
+    p_r  = _padding(pipe['R'], shape=(max_steps, live_all))
+    p_obs, p_mask = _padding(pipe['obs'],
+                             shape=(max_steps, live_all, agent.n_in),
+                             return_mask=True, sidx=sidx)
+    p_act         = _padding(pipe['action'],
+                             shape=(max_steps, live_all), dtype='int64')
 
     # ================================================================= #
     # Policy Gradient over Trajectories for the Agent
     # ================================================================= #
     if not options['train_gt']:
-        p_obs, p_mask = _padding(pipe['obs'],
-                                 shape=(max_steps, live_all, agent.n_in),
-                                 return_mask=True, sidx=sidx)
-        p_r           = _padding(pipe['R'],
-                                 shape=(max_steps, live_all))
-        p_act         = _padding(pipe['action'],
-                                 shape=(max_steps, live_all), dtype='int64')
+
         # learning
-        info_t   = agent.get_learner()([p_obs, p_mask], p_act, p_r, lr=options['lr_policy'])
+        info_t   = agent.get_learner()(
+                [p_obs, p_mask], p_act, p_r,
+                lr=options['lr_policy'])
         info.update(info_t)
+        p_adv         = info['advantages']
+
+    else:
+        p_adv         = p_r
 
     # ================================================================ #
     # Policy Gradient for the underlying NMT model
@@ -542,7 +549,6 @@ def simultaneous_decoding(funcs, agent, options,
         p_c_mask = _padding(pipe['cmask'],
                             shape=(max_w_steps, live_all, p_x.shape[0]))
 
-        p_adv   = info['advantages']
         new_adv = [p_adv[p_act[:, s] == 1, s] for s in range(p_adv.shape[1])]
         new_adv, one_reward = _padding(new_adv, shape=(max_w_steps, live_all), return_mask=True)
 

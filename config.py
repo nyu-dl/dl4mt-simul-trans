@@ -114,7 +114,7 @@ def rl_config():
     config['coverage'] = False
     config['upper']    = False
     config['finetune'] = True
-    config['train_gt'] = True   # when training with GT, fix the agent??
+    config['train_gt'] = True   # when training with GT, fix the random agent??
     config['full_att'] = False
 
     return config

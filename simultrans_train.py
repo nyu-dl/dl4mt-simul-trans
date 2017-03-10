@@ -141,9 +141,9 @@ def run_simultrans(model,
     print 'training set {} lines / validation set {} lines'.format(train_num, valid_num)
     print 'use the reward function {}'.format(chr(config['Rtype'] + 65))
 
-    # ================================================================================= #
+    # ========================================================================== #
     # Main Loop: Run
-    # ================================================================================= #
+    # ========================================================================== #
     print 'Start Simultaneous Translator...'
     monitor = None
     if remote:

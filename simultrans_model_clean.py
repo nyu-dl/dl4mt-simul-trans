@@ -244,13 +244,13 @@ def simultaneous_decoding(funcs, agent, options,
         # ------------------------------------------------------------------
 
         inps  = [h_pipe[v] for v in ['prev_w', 'ctx', 'mask', 'prev_z']]
-        next_p, next_w, next_z, next_o, next_a, cur_emb = f_sim_next(*inps)
+        next_p, next_w, next_z, next_o, next_a, cur_emb, _ = f_sim_next(*inps)
 
         if options['full_att']:
             old_mask = numpy.tile(one,  [1, live_k])
             inps2    = inps
             inps2[2] = old_mask
-            _, _, _, _, next_fa, _ = f_sim_next(*inps2)
+            _, _, _, _, next_fa, _, _ = f_sim_next(*inps2)
 
         # -------------------------------------------------------------------
         # obtain the candidate and the accumulated score.

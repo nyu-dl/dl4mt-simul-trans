@@ -114,6 +114,11 @@ def run_simultrans(model,
     else:
         funcs = [f_sim_ctx, f_sim_init, f_sim_next, f_cost]
 
+    # build a res-predictor
+    if options['predict']:
+        pass
+
+
 
     # check the ID:
     options['base'] = _model

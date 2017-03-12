@@ -14,7 +14,7 @@ from data_iterator import check_length, iterate
 
 from simultrans_model_clean import simultaneous_decoding
 from simultrans_model_clean import _seqs2words, _bpe2words, _padding
-
+from actors import get_actor
 import time
 
 numpy.random.seed(19920206)
@@ -92,8 +92,8 @@ def run_simultrans(model,
     # ========================================================================= #
 
     # allocate model parameters
-    params = init_params(options)
-    params = load_params(model, params)
+    params  = init_params(options)
+    params  = load_params(model, params)
     tparams = init_tparams(params)
 
     # print 'build the model for computing cost (full source sentence).'
@@ -116,8 +116,8 @@ def run_simultrans(model,
 
     # build a res-predictor
     if options['predict']:
+        params_act = get_actor('gru')[0](options, prefix='pdt', )
         pass
-
 
 
     # check the ID:

@@ -57,11 +57,11 @@ def flatcat(arrays):
 def flatgrad(loss, vars_):
     return flatcat(tensor.grad(loss, wrt=itemlist(vars_)))
 
+
 def zipsame(*seqs):
     L = len(seqs[0])
     assert all(len(seq) == L for seq in seqs[1:])
     return zip(*seqs)
-
 
 
 # ------------------------------------------------------------------------#
@@ -535,6 +535,227 @@ def gru_cond_layer(tparams, state_below, options, prefix='gru',
                                     profile=profile,
                                     strict=True)
     return rval
+
+
+# ------------------------------------------------------------------- #
+def param_init_gru_actor(options, params, prefix='gru_cond',
+                        nin=None, dim=None, dimctx=None,
+                        nin_nonlin=None, dim_nonlin=None):
+    if nin is None:
+        nin = options['dim']
+    if dim is None:
+        dim = options['dim']
+    if dimctx is None:
+        dimctx = options['dim']
+    if nin_nonlin is None:
+        nin_nonlin = nin
+    if dim_nonlin is None:
+        dim_nonlin = dim
+
+    W = numpy.concatenate([norm_weight(nin, dim),
+                           norm_weight(nin, dim)], axis=1)
+    params[_p(prefix, 'W')] = W
+    params[_p(prefix, 'b')] = numpy.zeros((2 * dim,)).astype('float32')
+    U = numpy.concatenate([ortho_weight(dim_nonlin),
+                           ortho_weight(dim_nonlin)], axis=1)
+    params[_p(prefix, 'U')] = U
+
+    Wx = norm_weight(nin_nonlin, dim_nonlin)
+    params[_p(prefix, 'Wx')] = Wx
+    Ux = ortho_weight(dim_nonlin)
+    params[_p(prefix, 'Ux')] = Ux
+    params[_p(prefix, 'bx')] = numpy.zeros((dim_nonlin,)).astype('float32')
+
+    U_nl = numpy.concatenate([ortho_weight(dim_nonlin),
+                              ortho_weight(dim_nonlin)], axis=1)
+    params[_p(prefix, 'U_nl')] = U_nl
+    params[_p(prefix, 'b_nl')] = numpy.zeros((2 * dim_nonlin,)).astype('float32')
+
+    Ux_nl = ortho_weight(dim_nonlin)
+    params[_p(prefix, 'Ux_nl')] = Ux_nl
+    params[_p(prefix, 'bx_nl')] = numpy.zeros((dim_nonlin,)).astype('float32')
+
+    # context to LSTM
+    Wc = norm_weight(dimctx, dim*2)
+    params[_p(prefix, 'Wc')] = Wc
+
+    Wcx = norm_weight(dimctx, dim)
+    params[_p(prefix, 'Wcx')] = Wcx
+
+    # attention: combined -> hidden
+    W_comb_att = norm_weight(dim, dimctx)
+    params[_p(prefix, 'W_comb_att')] = W_comb_att
+
+    # attention: context -> hidden
+    Wc_att = norm_weight(dimctx)
+    params[_p(prefix, 'Wc_att')] = Wc_att
+
+    # attention: hidden bias
+    b_att = numpy.zeros((dimctx,)).astype('float32')
+    params[_p(prefix, 'b_att')] = b_att
+
+    # attention:
+    U_att = norm_weight(dimctx, 1)
+    params[_p(prefix, 'U_att')] = U_att
+    c_att = numpy.zeros((1,)).astype('float32')
+    params[_p(prefix, 'c_tt')] = c_att
+
+    return params
+
+
+def gru_actor_layer(trng,
+                    tparams, state_below, options, prefix='gru',
+                    mask=None, context=None, one_step=False,
+                    init_memory=None, init_state=None,
+                    context_mask=None, full_mask=None,
+                    actor=None,  init_actor=None,
+                    **kwargs):
+
+    late_fuse = options.get('late', False)
+    pass_next = options.get('pass_next', True)
+    assert context, 'Context must be provided'
+
+    if one_step:
+        assert init_state, 'previous state must be provided'
+
+    nsteps = state_below.shape[0]
+    if state_below.ndim == 3:
+        n_samples = state_below.shape[1]
+    else:
+        n_samples = 1
+
+    # mask
+    if mask is None:
+        mask = tensor.alloc(1., state_below.shape[0], 1)
+
+    dim = tparams[_p(prefix, 'Wcx')].shape[1]
+
+    # initial/previous state
+    if init_state is None:
+        init_state = tensor.alloc(0., n_samples, dim)
+
+    # projected context
+    assert context.ndim == 3, \
+        'Context must be 3-d: #annotation x #sample x dim'
+    pctx_ = tensor.dot(context, tparams[_p(prefix, 'Wc_att')]) +\
+        tparams[_p(prefix, 'b_att')]
+
+    def _slice(_x, n, dim):
+        if _x.ndim == 3:
+            return _x[:, :, n*dim:(n+1)*dim]
+        return _x[:, n*dim:(n+1)*dim]
+
+    # projected x
+    state_belowx = tensor.dot(state_below, tparams[_p(prefix, 'Wx')]) +\
+        tparams[_p(prefix, 'bx')]
+    state_below_ = tensor.dot(state_below, tparams[_p(prefix, 'W')]) +\
+        tparams[_p(prefix, 'b')]
+
+    # action
+    if init_actor is None:
+        init_actor = tensor.alloc(0., n_samples, options['act_hdim'])
+
+    def _step_slice(m_, x_, xx_,
+                    h_, ctx_, alpha_, act_, noise_,
+                    pctx_, cc_,
+                    U, Wc, W_comb_att, U_att, c_tt, Ux, Wcx,
+                    U_nl, Ux_nl, b_nl, bx_nl):
+        preact1 = tensor.dot(h_, U)
+        preact1 += x_
+        preact1 = tensor.nnet.sigmoid(preact1)
+
+        r1 = _slice(preact1, 0, dim)
+        u1 = _slice(preact1, 1, dim)
+
+        preactx1 = tensor.dot(h_, Ux)
+        preactx1 *= r1
+        preactx1 += xx_
+
+        h1 = tensor.tanh(preactx1)
+        h1 = u1 * h_ + (1. - u1) * h1
+        h1 = m_[:, None] * h1 + (1. - m_)[:, None] * h_
+
+        # attention
+        pstate_ = tensor.dot(h1, W_comb_att)
+        pctx__ = pctx_ + pstate_[None, :, :]
+        pctx__ = tensor.tanh(pctx__)
+
+        alpha = tensor.dot(pctx__, U_att)+c_tt
+        alpha = alpha.reshape([alpha.shape[0], alpha.shape[1]])
+        alpha = tensor.exp(alpha)
+
+        alpha_c = alpha * context_mask
+        alpha_f = alpha * full_mask
+
+        alpha_c /= alpha_c.sum(0, keepdims=True) + TINY
+        cctx_   = (cc_ * alpha_c[:, :, None]).sum(0)  # current context
+
+        alpha_f /= alpha_f.sum(0, keepdims=True) + TINY
+        fctx_   = (cc_ * alpha_f[:, :, None]).sum(0)  # current context
+
+        if actor is not None:
+            eta_, act_ = actor(h1, cctx_, act_)
+
+        else:
+            raise NotImplementedError
+
+        ctx_ = cctx_ + eta_  # predict future contexts
+
+        preact2 = tensor.dot(h1, U_nl)+b_nl
+        preact2 += tensor.dot(ctx_, Wc)
+        preact2 = tensor.nnet.sigmoid(preact2)
+
+        r2 = _slice(preact2, 0, dim)
+        u2 = _slice(preact2, 1, dim)
+
+        preactx2 = tensor.dot(h1, Ux_nl)+bx_nl
+        preactx2 *= r2
+        preactx2 += tensor.dot(ctx_, Wcx)
+
+        h2 = tensor.tanh(preactx2)
+
+        h2 = u2 * h1 + (1. - u2) * h2
+        h2 = m_[:, None] * h2 + (1. - m_)[:, None] * h1
+
+        return h2, ctx_, alpha.T, act_, noise_, eta_, h1, fctx_
+
+    seqs  = [mask, state_below_, state_belowx]
+    _step = _step_slice
+
+    shared_vars = [tparams[_p(prefix, 'U')],
+                   tparams[_p(prefix, 'Wc')],
+                   tparams[_p(prefix, 'W_comb_att')],
+                   tparams[_p(prefix, 'U_att')],
+                   tparams[_p(prefix, 'c_tt')],
+                   tparams[_p(prefix, 'Ux')],
+                   tparams[_p(prefix, 'Wcx')],
+                   tparams[_p(prefix, 'U_nl')],
+                   tparams[_p(prefix, 'Ux_nl')],
+                   tparams[_p(prefix, 'b_nl')],
+                   tparams[_p(prefix, 'bx_nl')]]
+
+    if one_step:
+        rval = _step(*(seqs + [init_state, None, None, init_actor,
+                               init_noise , pctx_, context] +
+                       shared_vars))
+        return rval
+
+    else:
+        rval, updates = theano.scan(_step,
+                                    sequences=seqs,
+                                    outputs_info=[init_state,
+                                                  tensor.alloc(0., n_samples,
+                                                               context.shape[2]),
+                                                  tensor.alloc(0., n_samples,
+                                                               context.shape[0]),
+                                                  init_actor,
+                                                  init_noise,
+                                                  None, None, None],
+                                    non_sequences=[pctx_, context]+shared_vars,
+                                    name=_p(prefix, '_layers'),
+                                    n_steps=nsteps)
+        return rval, updates
+
 
 
 # LN-GRU layer

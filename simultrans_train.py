@@ -116,7 +116,8 @@ def run_simultrans(model,
 
     # build a res-predictor
     if options['predict']:
-        params_act = get_actor('gru')[0](options, prefix='pdt', )
+        params_act = get_actor('gru')[0](options, prefix='pdt',
+                                         nin=options['dim'])
         pass
 
 
@@ -214,7 +215,6 @@ def run_simultrans(model,
                 quality, delay, reward = zip(*statistics['track'])
                 reference += statistics['Ref']
                 system    += statistics['Sys']
-
 
                 # compute the average consective waiting length
                 def _consective(action):
